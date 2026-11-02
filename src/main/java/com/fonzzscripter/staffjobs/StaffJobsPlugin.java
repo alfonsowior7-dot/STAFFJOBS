@@ -35,6 +35,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -60,6 +67,8 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     private static final ZoneId WIB = ZoneId.of("Asia/Jakarta");
     private final Map<UUID, String> deathSelection = new HashMap<>();
     private final Map<UUID, Integer> deathPages = new HashMap<>();
+    private volatile String latestVersion;
+    private volatile boolean updateCheckCompleted;
 
     @Override
     public void onEnable() {
@@ -70,6 +79,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         loadLogs();
         loadDeaths();
         getServer().getPluginManager().registerEvents(this, this);
+        if (getConfig().getBoolean("settings.update-check.enabled", true)) checkForUpdates();
         Objects.requireNonNull(getCommand("staffmenu")).setExecutor(this);
         Objects.requireNonNull(getCommand("report")).setExecutor(this);
         Bukkit.getScheduler().runTaskTimer(this, this::removeExpiredReports, 20L * 60L, 20L * 60L);
@@ -357,11 +367,97 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    // VERSION UPDATE CHECK
+
+    private void checkForUpdates() {
+        Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
+            HttpURLConnection connection = null;
+            String foundVersion = null;
+            try {
+                URL url = new URL("https://raw.githubusercontent.com/alfonsowior7-dot/STAFFJOBS/main/src/main/resources/plugin.yml");
+                connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+                connection.setRequestProperty("User-Agent", "STAFFJOBS-VersionChecker");
+                if (connection.getResponseCode() == HttpURLConnection.HTTP_OK) {
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                        String line;
+                        Pattern pattern = Pattern.compile("^\\s*version\\s*:\\s*['\\\"]?([^'\\\"\\s]+)");
+                        while ((line = reader.readLine()) != null) {
+                            Matcher matcher = pattern.matcher(line);
+                            if (matcher.find()) {
+                                foundVersion = matcher.group(1).trim();
+                                break;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception exception) {
+                getLogger().warning("Could not check for updates: " + exception.getMessage());
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+
+            final String remoteVersion = foundVersion;
+            Bukkit.getScheduler().runTask(this, () -> {
+                latestVersion = remoteVersion;
+                updateCheckCompleted = true;
+                if (latestVersion == null || latestVersion.isBlank()) {
+                    getLogger().warning("Version check could not retrieve the latest version.");
+                    return;
+                }
+                for (Player online : Bukkit.getOnlinePlayers()) {
+                    sendVersionNotice(online);
+                }
+                if (isNewerVersion(latestVersion, getDescription().getVersion())) {
+                    getLogger().warning("A new version is available: " + latestVersion
+                            + " (installed: " + getDescription().getVersion() + ").");
+                }
+            });
+        });
+    }
+
+    private void sendVersionNotice(Player player) {
+        if (latestVersion == null || latestVersion.isBlank()) return;
+        String current = getDescription().getVersion();
+        player.sendMessage("§8§m----------------------------------------");
+        player.sendMessage("§b§lSTAFFJOBS §7Version Information");
+        player.sendMessage("§7Installed version: §f" + current);
+        if (isNewerVersion(latestVersion, current)) {
+            player.sendMessage("§7Latest version: §a" + latestVersion + " §e(UPDATE AVAILABLE)");
+            player.sendMessage("§ePlease ask an administrator to update STAFFJOBS.");
+        } else {
+            player.sendMessage("§7Latest version: §a" + latestVersion + " §a(UP TO DATE)");
+        }
+        player.sendMessage("§8§m----------------------------------------");
+    }
+
+    private boolean isNewerVersion(String latest, String current) {
+        try {
+            String[] latestParts = latest.replaceFirst("^[vV]", "").split("[.-]");
+            String[] currentParts = current.replaceFirst("^[vV]", "").split("[.-]");
+            int length = Math.max(latestParts.length, currentParts.length);
+            for (int i = 0; i < length; i++) {
+                int latestPart = i < latestParts.length ? Integer.parseInt(latestParts[i]) : 0;
+                int currentPart = i < currentParts.length ? Integer.parseInt(currentParts[i]) : 0;
+                if (latestPart != currentPart) return latestPart > currentPart;
+            }
+        } catch (NumberFormatException ignored) {
+            return !latest.equalsIgnoreCase(current);
+        }
+        return false;
+    }
+
     // OFFLINE NOTIFICATIONS
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+        if (updateCheckCompleted) {
+            sendVersionNotice(player);
+        }
         if (frozen.contains(player.getUniqueId())) {
             player.sendMessage(PREFIX + ChatColor.RED + "You are still FROZEN by a staff member.");
         }
