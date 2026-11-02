@@ -63,8 +63,9 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, Integer> reportPages = new HashMap<>();
     private final Map<UUID, String> selectedReports = new HashMap<>();
 
-    private File frozenFile, reportsFile, notificationsFile, logsFile, deathsFile;
-    private YamlConfiguration frozenData, reportsData, notificationsData, logsData, deathsData;
+    private File frozenFile, reportsFile, notificationsFile, logsFile, deathsFile, punishmentsFile;
+    private YamlConfiguration frozenData, reportsData, notificationsData, logsData, deathsData, punishmentsData;
+    private final Map<UUID, Long> mutedUntil = new java.util.concurrent.ConcurrentHashMap<>();
     private final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss");
     private static final ZoneId WIB = ZoneId.of("Asia/Jakarta");
     private final Map<UUID, String> deathSelection = new HashMap<>();
@@ -80,6 +81,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         loadNotifications();
         loadLogs();
         loadDeaths();
+        loadPunishments();
         getServer().getPluginManager().registerEvents(this, this);
         if (getConfig().getBoolean("settings.update-check.enabled", true)) checkForUpdates();
         Objects.requireNonNull(getCommand("staffmenu")).setExecutor(this);
@@ -92,6 +94,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     public void onDisable() {
         saveFrozen();
         saveReports();
+        savePunishments();
         saveNotifications();
         selected.clear();
         pendingAction.clear();
@@ -171,6 +174,67 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             return true;
         }
 
+
+        if (command.getName().equalsIgnoreCase("warn")
+                || command.getName().equalsIgnoreCase("mute")
+                || command.getName().equalsIgnoreCase("unmute")
+                || command.getName().equalsIgnoreCase("punishments")) {
+            String action = command.getName().toLowerCase(Locale.ROOT);
+            if (!sender.hasPermission("staffjobs." + action)) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "You do not have permission.");
+                return true;
+            }
+            int minimum = action.equals("warn") ? 2 : action.equals("mute") ? 3 : 1;
+            if (args.length < minimum) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Usage: /" + action + " " +
+                        (action.equals("warn") ? "<player> <reason>" :
+                         action.equals("mute") ? "<player> <duration> <reason>" : "<player>"));
+                return true;
+            }
+            Player target = Bukkit.getPlayerExact(args[0]);
+            if (target == null) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "Player must be online.");
+                return true;
+            }
+            if (sender instanceof Player staff && !canPunish(staff, target)) {
+                sender.sendMessage(PREFIX + ChatColor.RED + "You cannot punish yourself or an equal/higher-ranked player.");
+                return true;
+            }
+            String actor = sender.getName();
+            if (action.equals("warn")) {
+                String reason = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+                addPunishment(target, "WARN", reason, actor, 0L);
+                target.sendMessage(PREFIX + ChatColor.YELLOW + "You have received a warning: " + reason);
+                sender.sendMessage(PREFIX + ChatColor.GREEN + "Warning issued to " + target.getName() + ".");
+            } else if (action.equals("mute")) {
+                Date expiry = parseBanExpiry(args[1]);
+                if (expiry == null) {
+                    sender.sendMessage(PREFIX + ChatColor.RED + "Invalid duration. Examples: 10m, 2h, 1d.");
+                    return true;
+                }
+                String reason = String.join(" ", Arrays.copyOfRange(args, 2, args.length));
+                long until = expiry.getTime();
+                mutedUntil.put(target.getUniqueId(), until);
+                addPunishment(target, "MUTE", reason, actor, until);
+                target.sendMessage(PREFIX + ChatColor.RED + "You have been muted for " + args[1] + ". Reason: " + reason);
+                sender.sendMessage(PREFIX + ChatColor.GREEN + target.getName() + " muted for " + args[1] + ".");
+            } else if (action.equals("unmute")) {
+                mutedUntil.remove(target.getUniqueId());
+                addPunishment(target, "UNMUTE", "Mute removed", actor, 0L);
+                sender.sendMessage(PREFIX + ChatColor.GREEN + target.getName() + " has been unmuted.");
+                target.sendMessage(PREFIX + ChatColor.GREEN + "Your mute has been removed.");
+            } else {
+                List<String> history = punishmentsData.getStringList("players." + target.getUniqueId());
+                sender.sendMessage("§8§m---------------- STAFFJOBS HISTORY ----------------");
+                sender.sendMessage("§ePunishment history for §f" + target.getName());
+                if (history.isEmpty()) sender.sendMessage("§7No punishment records.");
+                else for (String entry : history) sender.sendMessage("§7" + entry);
+                sender.sendMessage("§8§m---------------------------------------------------");
+            }
+            savePunishments();
+            return true;
+        }
+
         if (command.getName().equalsIgnoreCase("report")) {
             if (!(sender instanceof Player player)) {
                 sender.sendMessage("This command can only be used by players.");
@@ -193,6 +257,64 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             return true;
         }
         return false;
+    }
+
+
+    private boolean canPunish(Player staff, Player target) {
+        if (staff.getUniqueId().equals(target.getUniqueId())) return false;
+        return staff.hasPermission("staffjobs.protect.bypass") || getRank(staff) > getRank(target);
+    }
+
+    private void loadPunishments() {
+        punishmentsFile = new File(getDataFolder(), "punishments.yml");
+        punishmentsData = YamlConfiguration.loadConfiguration(punishmentsFile);
+        if (punishmentsData.getConfigurationSection("mute-expiry") != null) {
+            for (String key : punishmentsData.getConfigurationSection("mute-expiry").getKeys(false)) {
+                try {
+                    long expiry = punishmentsData.getLong("mute-expiry." + key);
+                    if (expiry > System.currentTimeMillis()) mutedUntil.put(UUID.fromString(key), expiry);
+                } catch (IllegalArgumentException ignored) {
+                    getLogger().warning("Invalid muted player UUID: " + key);
+                }
+            }
+        }
+    }
+
+    private void savePunishments() {
+        if (punishmentsData == null) return;
+        punishmentsData.set("mute-expiry", null);
+        for (Map.Entry<UUID, Long> entry : mutedUntil.entrySet()) {
+            if (entry.getValue() > System.currentTimeMillis()) {
+                punishmentsData.set("mute-expiry." + entry.getKey(), entry.getValue());
+            }
+        }
+        saveFile(punishmentsData, punishmentsFile);
+    }
+
+    private void addPunishment(Player target, String type, String reason, String actor, long expiry) {
+        String path = "players." + target.getUniqueId();
+        List<String> history = punishmentsData.getStringList(path);
+        String record = ZonedDateTime.now(WIB).format(dateFormatter) + " WIB | " + type
+                + " | By: " + actor + " | Reason: " + reason
+                + (expiry > 0 ? " | Expires: " + ZonedDateTime.ofInstant(
+                        java.time.Instant.ofEpochMilli(expiry), WIB).format(dateFormatter) + " WIB" : "");
+        history.add(record);
+        while (history.size() > 100) history.remove(0);
+        punishmentsData.set(path, history);
+    }
+
+    @EventHandler
+    public void onMutedChat(AsyncPlayerChatEvent event) {
+        Long expiry = mutedUntil.get(event.getPlayer().getUniqueId());
+        if (expiry == null) return;
+        if (expiry <= System.currentTimeMillis()) {
+            mutedUntil.remove(event.getPlayer().getUniqueId());
+            Bukkit.getScheduler().runTask(this, this::savePunishments);
+            return;
+        }
+        event.setCancelled(true);
+        event.getPlayer().sendMessage(PREFIX + ChatColor.RED + "You are muted for another "
+                + Math.max(1, (expiry - System.currentTimeMillis()) / 60000) + " minute(s).");
     }
 
     // REPORT SYSTEM
