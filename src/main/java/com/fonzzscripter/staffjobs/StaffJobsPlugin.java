@@ -161,6 +161,20 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (command.getName().equalsIgnoreCase("staffjobs")) {
+            String version = getDescription().getVersion();
+            String author = getDescription().getAuthors().isEmpty()
+                    ? "Unknown"
+                    : String.join(", ", getDescription().getAuthors());
+            sender.sendMessage("§8§m----------------------------------------");
+            sender.sendMessage("§b§lSTAFFJOBS §7Plugin Information");
+            sender.sendMessage("§7Version: §a" + version);
+            sender.sendMessage("§7Author: §f" + author);
+            sender.sendMessage("§7Description: §f" + getDescription().getDescription());
+            sender.sendMessage("§8§m----------------------------------------");
+            return true;
+        }
+
         if (command.getName().equalsIgnoreCase("staffmenu")) {
             if (!(sender instanceof Player player)) {
                 sender.sendMessage("This command can only be used by players.");
