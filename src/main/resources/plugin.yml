@@ -6,6 +6,9 @@ author: FonzzScripter
 description: Advanced Server Staff Management
 
 commands:
+  staffjobs:
+    description: Display STAFFJOBS version and author information
+    usage: /staffjobs
   staffmenu:
     description: Open STAFFJOBS management menu
     usage: /staffmenu
