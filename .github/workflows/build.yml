@@ -28,7 +28,7 @@ jobs:
 
       - name: Read plugin version
         id: meta
-        run: echo "version=$(grep '^version =' build.gradle | sed -E \"s/version = ['\\\"]([^'\\\"]+)['\\\"]/\\1/\")" >> "$GITHUB_OUTPUT"
+        run: VERSION=$(awk -F "'" '/^version =/ {print $2}' build.gradle); echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Upload STAFFJOBS JAR
         uses: actions/upload-artifact@v4
