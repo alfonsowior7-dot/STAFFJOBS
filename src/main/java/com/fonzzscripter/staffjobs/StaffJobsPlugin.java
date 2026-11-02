@@ -644,6 +644,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
                 frozen.contains(target.getUniqueId()) ? "§aUnfreeze Player" : "§bFreeze Player"
         ));
         inventory.setItem(16, createItem(Material.CLOCK, "§6Temporary Ban", "§7Enter a reason and duration in chat.", "§7Example duration: 30m, 2h, 7d."));
+        inventory.setItem(20, createItem(Material.CHEST, "§bView Inventory (InvSee)", "§7View and manage this player's inventory.", "§7Requires: staffjobs.invsee"));
         inventory.setItem(22, createItem(Material.ARROW, "§eBack"));
         staff.openInventory(inventory);
     }
@@ -790,6 +791,23 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
                 }
                 toggleFreeze(target);
                 openActions(player, target);
+            } else if (slot == 20) {
+                if (!player.hasPermission("staffjobs.invsee")) {
+                    player.sendMessage(PREFIX + ChatColor.RED + "You do not have permission to use InvSee.");
+                    return;
+                }
+                if (!canManage(player, target)) {
+                    player.sendMessage(PREFIX + ChatColor.RED + "You cannot inspect that player's inventory.");
+                    openPlayers(player);
+                    return;
+                }
+                if (player.getUniqueId().equals(target.getUniqueId())) {
+                    player.sendMessage(PREFIX + ChatColor.RED + "You cannot use InvSee on yourself.");
+                    return;
+                }
+                logAction(player, "INVSEE", target.getName());
+                player.openInventory(target.getInventory());
+                player.sendMessage(PREFIX + ChatColor.GREEN + "Opened " + target.getName() + "'s inventory.");
             } else if (slot == 22) openPlayers(player);
             return;
         }
