@@ -442,6 +442,8 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         if (title.equals(MENU)) {
             if (slot == 10) openPlayers(player);
             else if (slot == 13) openReportLogs(player, 0);
+            else if (slot == 16) openActivityLogs(player);
+            else if (slot == 22) openDeathHistory(player, 0);
             else if (slot == 31) player.closeInventory();
             return;
         }
