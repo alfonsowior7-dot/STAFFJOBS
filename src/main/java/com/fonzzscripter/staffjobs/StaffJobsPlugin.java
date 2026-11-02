@@ -12,6 +12,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -57,7 +58,8 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     private final Set<UUID> frozen = new HashSet<>();
     private final Map<UUID, UUID> selected = new HashMap<>();
-    private final Map<UUID, String> pendingAction = new HashMap<>();
+    private final Map<UUID, String> pendingAction = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<UUID, String> pendingReason = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID, Integer> reportPages = new HashMap<>();
     private final Map<UUID, String> selectedReports = new HashMap<>();
 
@@ -93,6 +95,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         saveNotifications();
         selected.clear();
         pendingAction.clear();
+        pendingReason.clear();
         reportPages.clear();
         selectedReports.clear();
     }
@@ -498,12 +501,13 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     private void openActions(Player staff, Player target) {
         selected.put(staff.getUniqueId(), target.getUniqueId());
         Inventory inventory = Bukkit.createInventory(null, 27, ACTIONS);
-        inventory.setItem(10, createItem(Material.IRON_SWORD, "§cKick Player"));
-        inventory.setItem(12, createItem(Material.BARRIER, "§4Ban Player"));
+        inventory.setItem(10, createItem(Material.IRON_SWORD, "§cKick Player", "§7Click, then enter a reason in chat."));
+        inventory.setItem(12, createItem(Material.BARRIER, "§4Permanent Ban", "§7Click, then enter a reason in chat."));
         inventory.setItem(14, createItem(
                 frozen.contains(target.getUniqueId()) ? Material.LIME_WOOL : Material.ICE,
                 frozen.contains(target.getUniqueId()) ? "§aUnfreeze Player" : "§bFreeze Player"
         ));
+        inventory.setItem(16, createItem(Material.CLOCK, "§6Temporary Ban", "§7Enter a reason and duration in chat.", "§7Example duration: 30m, 2h, 7d."));
         inventory.setItem(22, createItem(Material.ARROW, "§eBack"));
         staff.openInventory(inventory);
     }
@@ -618,10 +622,6 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
             if (slot < online.size()) {
                 Player target = online.get(slot);
-                if (target.getUniqueId().equals(player.getUniqueId())) {
-                    player.sendMessage(PREFIX + ChatColor.RED + "You cannot manage yourself.");
-                    return;
-                }
                 if (!canManage(player, target)) {
                     player.sendMessage(PREFIX + ChatColor.RED + "That player's rank is too high.");
                     return;
@@ -640,8 +640,9 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
                 openPlayers(player);
                 return;
             }
-            if (slot == 10) openConfirm(player, "kick");
-            else if (slot == 12) openConfirm(player, "ban");
+            if (slot == 10) beginModerationChat(player, "kick");
+            else if (slot == 12) beginModerationChat(player, "ban");
+            else if (slot == 16) beginModerationChat(player, "tempban");
             else if (slot == 14) {
                 toggleFreeze(target);
                 openActions(player, target);
@@ -682,6 +683,137 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             }
             openStaffMenu(player);
         }
+    }
+
+    // CHAT-BASED KICK / BAN SYSTEM
+
+    private void beginModerationChat(Player staff, String action) {
+        pendingAction.put(staff.getUniqueId(), action + "_reason");
+        pendingReason.remove(staff.getUniqueId());
+        staff.closeInventory();
+        String targetName = "the selected player";
+        UUID targetId = selected.get(staff.getUniqueId());
+        if (targetId != null) {
+            Player target = Bukkit.getPlayer(targetId);
+            if (target != null) targetName = target.getName();
+        }
+        staff.sendMessage(PREFIX + ChatColor.YELLOW + "Enter the reason for " + targetName + " in chat.");
+        staff.sendMessage(ChatColor.GRAY + "Type 'cancel' to cancel this action.");
+    }
+
+    @EventHandler
+    public void onModerationChat(AsyncPlayerChatEvent event) {
+        Player staff = event.getPlayer();
+        UUID staffId = staff.getUniqueId();
+        String state = pendingAction.get(staffId);
+        if (state == null || !(state.endsWith("_reason") || state.equals("tempban_duration"))) return;
+
+        event.setCancelled(true);
+        String input = event.getMessage().trim();
+        Bukkit.getScheduler().runTask(this, () -> {
+            if (!pendingAction.containsKey(staffId)) return;
+            if (input.equalsIgnoreCase("cancel")) {
+                pendingAction.remove(staffId);
+                pendingReason.remove(staffId);
+                staff.sendMessage(PREFIX + ChatColor.YELLOW + "Moderation action cancelled.");
+                return;
+            }
+            if (input.isEmpty()) {
+                staff.sendMessage(PREFIX + ChatColor.RED + "Input cannot be empty. Type 'cancel' to cancel.");
+                return;
+            }
+
+            if (state.equals("tempban_reason")) {
+                pendingReason.put(staffId, input);
+                pendingAction.put(staffId, "tempban_duration");
+                staff.sendMessage(PREFIX + ChatColor.YELLOW + "Now enter the temporary ban duration.");
+                staff.sendMessage(ChatColor.GRAY + "Examples: 10s, 5m, 2h, 7d, 2w, 1mo, 1y.");
+                return;
+            }
+
+            if (state.equals("tempban_duration")) {
+                Date expiry = parseBanExpiry(input);
+                if (expiry == null) {
+                    staff.sendMessage(PREFIX + ChatColor.RED + "Invalid duration. Use formats such as 10s, 5m, 2h, 7d, 2w, 1mo or 1y.");
+                    return;
+                }
+                String reason = pendingReason.getOrDefault(staffId, "No reason provided");
+                pendingAction.remove(staffId);
+                pendingReason.remove(staffId);
+                executeModeration(staff, "tempban", reason, expiry, input);
+                return;
+            }
+
+            String action = state.substring(0, state.length() - "_reason".length());
+            pendingAction.remove(staffId);
+            pendingReason.remove(staffId);
+            executeModeration(staff, action, input, null, null);
+        });
+    }
+
+    private Date parseBanExpiry(String input) {
+        String normalized = input.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+        Matcher matcher = Pattern.compile("^(\\d+)(s|sec|secs|second|seconds|detik|m|min|mins|minute|minutes|menit|h|hr|hrs|hour|hours|jam|d|day|days|hari|w|week|weeks|minggu|mo|month|months|bulan|y|year|years|tahun)$")
+                .matcher(normalized);
+        if (!matcher.matches()) return null;
+        try {
+            long amount = Long.parseLong(matcher.group(1));
+            if (amount <= 0) return null;
+            String unit = matcher.group(2);
+            ZonedDateTime expiry = ZonedDateTime.now(WIB);
+            switch (unit) {
+                case "s", "sec", "secs", "second", "seconds", "detik" -> expiry = expiry.plusSeconds(amount);
+                case "m", "min", "mins", "minute", "minutes", "menit" -> expiry = expiry.plusMinutes(amount);
+                case "h", "hr", "hrs", "hour", "hours", "jam" -> expiry = expiry.plusHours(amount);
+                case "d", "day", "days", "hari" -> expiry = expiry.plusDays(amount);
+                case "w", "week", "weeks", "minggu" -> expiry = expiry.plusWeeks(amount);
+                case "mo", "month", "months", "bulan" -> expiry = expiry.plusMonths(amount);
+                case "y", "year", "years", "tahun" -> expiry = expiry.plusYears(amount);
+                default -> { return null; }
+            }
+            return Date.from(expiry.toInstant());
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private void executeModeration(Player staff, String action, String reason, Date expiry, String durationText) {
+        UUID targetId = selected.get(staff.getUniqueId());
+        Player target = targetId == null ? null : Bukkit.getPlayer(targetId);
+        if (target == null) {
+            staff.sendMessage(PREFIX + ChatColor.RED + "The selected player is no longer online.");
+            openPlayers(staff);
+            return;
+        }
+        if (!canManage(staff, target)) {
+            staff.sendMessage(PREFIX + ChatColor.RED + "You cannot manage that player.");
+            openStaffMenu(staff);
+            return;
+        }
+
+        String cleanReason = ChatColor.stripColor(reason);
+        if (cleanReason == null || cleanReason.isBlank()) cleanReason = "No reason provided";
+        String kickMessage = ChatColor.RED + "You were " + (action.equals("kick") ? "kicked" : "banned")
+                + " by " + staff.getName() + ".\n" + ChatColor.GRAY + "Reason: " + cleanReason;
+
+        if (action.equals("kick")) {
+            logAction(staff, "KICK", target.getName() + " | Reason: " + cleanReason);
+            target.kickPlayer(kickMessage);
+            staff.sendMessage(PREFIX + ChatColor.GREEN + target.getName() + " was kicked. Reason: " + cleanReason);
+        } else if (action.equals("ban")) {
+            Bukkit.getBanList(BanList.Type.NAME).addBan(target.getName(), cleanReason, null, staff.getName());
+            logAction(staff, "BAN", target.getName() + " | Reason: " + cleanReason);
+            target.kickPlayer(kickMessage);
+            staff.sendMessage(PREFIX + ChatColor.GREEN + target.getName() + " was permanently banned. Reason: " + cleanReason);
+        } else if (action.equals("tempban")) {
+            Bukkit.getBanList(BanList.Type.NAME).addBan(target.getName(), cleanReason, expiry, staff.getName());
+            logAction(staff, "TEMPBAN", target.getName() + " | Duration: " + durationText + " | Reason: " + cleanReason);
+            target.kickPlayer(ChatColor.RED + "You were temporarily banned by " + staff.getName()
+                    + ".\n" + ChatColor.GRAY + "Duration: " + durationText + "\nReason: " + cleanReason);
+            staff.sendMessage(PREFIX + ChatColor.GREEN + target.getName() + " was temporarily banned for "
+                    + durationText + ". Reason: " + cleanReason);
+        }
+        openStaffMenu(staff);
     }
 
     // FREEZE SYSTEM
@@ -952,7 +1084,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     }
 
     private boolean canManage(Player staff, Player target) {
-        if (staff.getUniqueId().equals(target.getUniqueId())) return false;
+        if (staff.getUniqueId().equals(target.getUniqueId())) return true;
         if (staff.hasPermission("staffjobs.protect.bypass")) return true;
         return getRank(staff) > getRank(target);
     }
