@@ -26,8 +26,12 @@ jobs:
       - name: Build plugin
         run: gradle build
 
+      - name: Read plugin version
+        id: meta
+        run: echo "version=$(grep '^version =' build.gradle | sed -E \"s/version = ['\\\"]([^'\\\"]+)['\\\"]/\\1/\")" >> "$GITHUB_OUTPUT"
+
       - name: Upload STAFFJOBS JAR
         uses: actions/upload-artifact@v4
         with:
-          name: STAFFJOBS
+          name: StaffJobs${{ steps.meta.outputs.version }}
           path: build/libs/*.jar
