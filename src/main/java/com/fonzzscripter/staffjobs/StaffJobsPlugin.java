@@ -381,7 +381,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         Inventory inventory = Bukkit.createInventory(null, 45, MENU);
         inventory.setItem(10, createItem(Material.PLAYER_HEAD, "§eKelola Pemain"));
         inventory.setItem(13, createItem(Material.BOOK, "§eDaftar Laporan", "§7Total laporan: " + getReports().size()));
-        inventory.setItem(15, createItem(Material.WRITABLE_BOOK, "§eStaff Activity Logs"));
+        inventory.setItem(16, createItem(Material.WRITABLE_BOOK, "§eStaff Activity Logs"));
         inventory.setItem(22, createItem(Material.TOTEM_OF_UNDYING, "§cDeath History"));
         inventory.setItem(31, createItem(Material.BARRIER, "§cTutup Menu"));
         player.openInventory(inventory);
