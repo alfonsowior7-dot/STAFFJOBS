@@ -42,11 +42,11 @@ import java.util.*;
 public class StaffJobsPlugin extends JavaPlugin implements Listener {
     private static final String PREFIX = ChatColor.YELLOW + "[ʜᴇʟᴘᴇʀꜱᴛᴀꜰꜰ] ";
     private static final String MENU = "§8STAFFJOBS";
-    private static final String PLAYERS = "§8Pilih Pemain";
-    private static final String ACTIONS = "§8Kelola Pemain";
-    private static final String CONFIRM = "§8Konfirmasi";
-    private static final String REPORTS = "§8Daftar Laporan";
-    private static final String REPORT_DETAIL = "§8Detail Laporan";
+    private static final String PLAYERS = "§8Select Player";
+    private static final String ACTIONS = "§8Manage Player";
+    private static final String CONFIRM = "§8Confirmation";
+    private static final String REPORTS = "§8Reports";
+    private static final String REPORT_DETAIL = "§8Report Details";
 
     private final Set<UUID> frozen = new HashSet<>();
     private final Map<UUID, UUID> selected = new HashMap<>();
@@ -73,7 +73,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         Objects.requireNonNull(getCommand("staffmenu")).setExecutor(this);
         Objects.requireNonNull(getCommand("report")).setExecutor(this);
         Bukkit.getScheduler().runTaskTimer(this, this::removeExpiredReports, 20L * 60L, 20L * 60L);
-        getLogger().info("STAFFJOBS berhasil diaktifkan!");
+        getLogger().info("STAFFJOBS has been enabled successfully!");
     }
 
     @Override
@@ -97,7 +97,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             try {
                 frozen.add(UUID.fromString(value));
             } catch (IllegalArgumentException ignored) {
-                getLogger().warning("UUID freeze tidak valid: " + value);
+                getLogger().warning("Invalid freeze UUID: " + value);
             }
         }
     }
@@ -136,7 +136,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         try {
             data.save(file);
         } catch (IOException exception) {
-            getLogger().severe("Gagal menyimpan " + file.getName());
+            getLogger().severe("Failed to save " + file.getName());
             exception.printStackTrace();
         }
     }
@@ -147,11 +147,11 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (command.getName().equalsIgnoreCase("staffmenu")) {
             if (!(sender instanceof Player player)) {
-                sender.sendMessage("Command ini hanya bisa digunakan pemain.");
+                sender.sendMessage("This command can only be used by players.");
                 return true;
             }
             if (!player.hasPermission("staffjobs.use")) {
-                player.sendMessage(PREFIX + ChatColor.RED + "Kamu tidak memiliki izin.");
+                player.sendMessage(PREFIX + ChatColor.RED + "You do not have permission.");
                 return true;
             }
             openStaffMenu(player);
@@ -160,20 +160,20 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
 
         if (command.getName().equalsIgnoreCase("report")) {
             if (!(sender instanceof Player player)) {
-                sender.sendMessage("Command ini hanya bisa digunakan pemain.");
+                sender.sendMessage("This command can only be used by players.");
                 return true;
             }
             if (!player.hasPermission("staffjobs.report")) {
-                player.sendMessage(PREFIX + ChatColor.RED + "Kamu tidak memiliki izin.");
+                player.sendMessage(PREFIX + ChatColor.RED + "You do not have permission.");
                 return true;
             }
             if (args.length == 0) {
-                player.sendMessage(PREFIX + ChatColor.RED + "Gunakan: /report <pesan>");
+                player.sendMessage(PREFIX + ChatColor.RED + "Usage: /report <message>");
                 return true;
             }
             String message = String.join(" ", args).trim();
             if (message.isEmpty()) {
-                player.sendMessage(PREFIX + ChatColor.RED + "Pesan laporan tidak boleh kosong.");
+                player.sendMessage(PREFIX + ChatColor.RED + "Report message cannot be empty.");
                 return true;
             }
             submitReport(player, message);
@@ -196,7 +196,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     private void submitReport(Player player, String message) {
         for (Map<?, ?> report : getReports()) {
             if (player.getUniqueId().toString().equals(reportValue(report, "uuid", ""))) {
-                player.sendMessage(PREFIX + ChatColor.RED + "Kamu masih memiliki laporan yang belum diselesaikan.");
+                player.sendMessage(PREFIX + ChatColor.RED + "You already have an unresolved report.");
                 return;
             }
         }
@@ -216,12 +216,12 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         reportsData.set("reports", reports);
         saveReports();
 
-        player.sendMessage(PREFIX + ChatColor.GREEN + "Laporan berhasil dikirim kepada STAFF.");
+        player.sendMessage(PREFIX + ChatColor.GREEN + "Your report has been sent to the staff team.");
         if (getConfig().getBoolean("settings.reports.notify-staff", true)) {
             for (Player staff : Bukkit.getOnlinePlayers()) {
                 if (staff.hasPermission("staffjobs.use")) {
-                    staff.sendMessage(PREFIX + ChatColor.YELLOW + player.getName() + " mengirim laporan baru!");
-                    staff.sendMessage(ChatColor.GRAY + "Gunakan /staffmenu untuk melihat laporan.");
+                    staff.sendMessage(PREFIX + ChatColor.YELLOW + player.getName() + " submitted a new report!");
+                    staff.sendMessage(ChatColor.GRAY + "Use /staffmenu to view reports.");
                 }
             }
         }
@@ -242,22 +242,22 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             inventory.setItem(i - start, createItem(
                     Material.PAPER,
                     ChatColor.YELLOW + reportValue(report, "player", "Unknown"),
-                    ChatColor.GRAY + "Waktu: " + reportValue(report, "date", "Unknown"),
-                    ChatColor.GRAY + "Laporan: " + reportValue(report, "message", ""),
+                    ChatColor.GRAY + "Time: " + reportValue(report, "date", "Unknown"),
+                    ChatColor.GRAY + "Report: " + reportValue(report, "message", ""),
                     "",
-                    ChatColor.GREEN + "Klik untuk melihat detail."
+                    ChatColor.GREEN + "Click to view details."
             ));
         }
-        inventory.setItem(45, createItem(Material.ARROW, "§eHalaman Sebelumnya"));
+        inventory.setItem(45, createItem(Material.ARROW, "§ePrevious Page"));
         inventory.setItem(49, createItem(Material.BARRIER, "§cKembali"));
-        inventory.setItem(53, createItem(Material.ARROW, "§eHalaman Berikutnya"));
+        inventory.setItem(53, createItem(Material.ARROW, "§eNext Page"));
         player.openInventory(inventory);
     }
 
     private void openReportDetail(Player player, String id) {
         Map<?, ?> report = findReport(id);
         if (report == null) {
-            player.sendMessage(PREFIX + ChatColor.RED + "Laporan tidak ditemukan.");
+            player.sendMessage(PREFIX + ChatColor.RED + "Report not found.");
             openReportLogs(player, 0);
             return;
         }
@@ -265,13 +265,13 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         Inventory inventory = Bukkit.createInventory(null, 27, REPORT_DETAIL);
         inventory.setItem(13, createItem(
                 Material.PAPER,
-                ChatColor.YELLOW + "Laporan dari " + reportValue(report, "player", "Unknown"),
-                ChatColor.GRAY + "Waktu: " + reportValue(report, "date", "Unknown"),
-                ChatColor.GRAY + "Pesan:",
+                ChatColor.YELLOW + "Report from " + reportValue(report, "player", "Unknown"),
+                ChatColor.GRAY + "Time: " + reportValue(report, "date", "Unknown"),
+                ChatColor.GRAY + "Message:",
                 ChatColor.WHITE + reportValue(report, "message", "")
         ));
-        inventory.setItem(15, createItem(Material.LIME_WOOL, "§aSELESAIKAN LAPORAN", "§7Klik untuk menyelesaikan laporan ini."));
-        inventory.setItem(11, createItem(Material.ARROW, "§eKembali ke daftar laporan"));
+        inventory.setItem(15, createItem(Material.LIME_WOOL, "§aRESOLVE REPORT", "§7Click to resolve this report."));
+        inventory.setItem(11, createItem(Material.ARROW, "§eBack to report list"));
         player.openInventory(inventory);
     }
 
@@ -292,7 +292,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             }
         }
         if (target == null) {
-            staff.sendMessage(PREFIX + ChatColor.RED + "Laporan tidak ditemukan.");
+            staff.sendMessage(PREFIX + ChatColor.RED + "Report not found.");
             return;
         }
 
@@ -303,13 +303,13 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         saveReports();
 
         String staffMessage = PREFIX + ChatColor.YELLOW + staff.getName()
-                + " telah menyelesaikan laporan " + reporterName;
+                + " resolved the report from " + reporterName;
         for (Player online : Bukkit.getOnlinePlayers()) {
             if (online.hasPermission("staffjobs.use")) online.sendMessage(staffMessage);
         }
 
-        String notification = PREFIX + ChatColor.GREEN + "Halo, STAFF telah menyelesaikan laporan anda.\n"
-                + PREFIX + ChatColor.YELLOW + "Jika anda tidak merasa dibantu STAFF harap melaporkan kembali.";
+        String notification = PREFIX + ChatColor.GREEN + "Halo, STAFF resolved the report from anda.\n"
+                + PREFIX + ChatColor.YELLOW + "If your issue has not been resolved, please submit another report.";
         try {
             UUID uuid = UUID.fromString(reporterUUID);
             Player reporter = Bukkit.getPlayer(uuid);
@@ -323,7 +323,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
                 saveNotifications();
             }
         } catch (IllegalArgumentException exception) {
-            getLogger().warning("UUID pelapor tidak valid: " + reporterUUID);
+            getLogger().warning("Invalid reporter UUID: " + reporterUUID);
         }
 
         staff.sendMessage(PREFIX + ChatColor.GREEN + "Laporan " + reporterName + " berhasil diselesaikan.");
@@ -353,7 +353,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         if (changed) {
             reportsData.set("reports", reports);
             saveReports();
-            getLogger().info("Laporan kedaluwarsa berhasil dibersihkan.");
+            getLogger().info("Expired reports have been cleared.");
         }
     }
 
@@ -363,7 +363,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         if (frozen.contains(player.getUniqueId())) {
-            player.sendMessage(PREFIX + ChatColor.RED + "Kamu masih dalam status FREEZE oleh STAFF.");
+            player.sendMessage(PREFIX + ChatColor.RED + "You are still FROZEN by a staff member.");
         }
 
         String path = "pending." + player.getUniqueId();
@@ -379,11 +379,11 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     private void openStaffMenu(Player player) {
         Inventory inventory = Bukkit.createInventory(null, 45, MENU);
-        inventory.setItem(10, createItem(Material.PLAYER_HEAD, "§eKelola Pemain"));
-        inventory.setItem(13, createItem(Material.BOOK, "§eDaftar Laporan", "§7Total laporan: " + getReports().size()));
+        inventory.setItem(10, createItem(Material.PLAYER_HEAD, "§eManage Players"));
+        inventory.setItem(13, createItem(Material.BOOK, "§eReports", "§7Total reports: " + getReports().size()));
         inventory.setItem(16, createItem(Material.WRITABLE_BOOK, "§eStaff Activity Logs"));
         inventory.setItem(22, createItem(Material.TOTEM_OF_UNDYING, "§cDeath History"));
-        inventory.setItem(31, createItem(Material.BARRIER, "§cTutup Menu"));
+        inventory.setItem(31, createItem(Material.BARRIER, "§cClose Menu"));
         player.openInventory(inventory);
     }
 
@@ -392,30 +392,30 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         int slot = 0;
         for (Player target : Bukkit.getOnlinePlayers()) {
             if (slot >= 45) break;
-            inventory.setItem(slot++, createItem(Material.PLAYER_HEAD, "§e" + target.getName(), "§7Klik untuk mengelola pemain."));
+            inventory.setItem(slot++, createItem(Material.PLAYER_HEAD, "§e" + target.getName(), "§7Click to manage this player."));
         }
-        inventory.setItem(49, createItem(Material.ARROW, "§eKembali"));
+        inventory.setItem(49, createItem(Material.ARROW, "§eBack"));
         player.openInventory(inventory);
     }
 
     private void openActions(Player staff, Player target) {
         selected.put(staff.getUniqueId(), target.getUniqueId());
         Inventory inventory = Bukkit.createInventory(null, 27, ACTIONS);
-        inventory.setItem(10, createItem(Material.IRON_SWORD, "§cKick Pemain"));
-        inventory.setItem(12, createItem(Material.BARRIER, "§4Ban Pemain"));
+        inventory.setItem(10, createItem(Material.IRON_SWORD, "§cKick Player"));
+        inventory.setItem(12, createItem(Material.BARRIER, "§4Ban Player"));
         inventory.setItem(14, createItem(
                 frozen.contains(target.getUniqueId()) ? Material.LIME_WOOL : Material.ICE,
-                frozen.contains(target.getUniqueId()) ? "§aUnfreeze Pemain" : "§bFreeze Pemain"
+                frozen.contains(target.getUniqueId()) ? "§aUnfreeze Player" : "§bFreeze Player"
         ));
-        inventory.setItem(22, createItem(Material.ARROW, "§eKembali"));
+        inventory.setItem(22, createItem(Material.ARROW, "§eBack"));
         staff.openInventory(inventory);
     }
 
     private void openConfirm(Player staff, String action) {
         pendingAction.put(staff.getUniqueId(), action);
         Inventory inventory = Bukkit.createInventory(null, 27, CONFIRM);
-        inventory.setItem(11, createItem(Material.LIME_WOOL, "§aKONFIRMASI"));
-        inventory.setItem(15, createItem(Material.RED_WOOL, "§cBATAL"));
+        inventory.setItem(11, createItem(Material.LIME_WOOL, "§aCONFIRM"));
+        inventory.setItem(15, createItem(Material.RED_WOOL, "§cCANCEL"));
         staff.openInventory(inventory);
     }
 
@@ -522,11 +522,11 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             if (slot < online.size()) {
                 Player target = online.get(slot);
                 if (target.getUniqueId().equals(player.getUniqueId())) {
-                    player.sendMessage(PREFIX + ChatColor.RED + "Kamu tidak bisa mengelola dirimu sendiri.");
+                    player.sendMessage(PREFIX + ChatColor.RED + "You cannot manage yourself.");
                     return;
                 }
                 if (!canManage(player, target)) {
-                    player.sendMessage(PREFIX + ChatColor.RED + "Rank pemain tersebut terlalu tinggi.");
+                    player.sendMessage(PREFIX + ChatColor.RED + "That player's rank is too high.");
                     return;
                 }
                 openActions(player, target);
@@ -539,7 +539,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             if (targetUUID == null) return;
             Player target = Bukkit.getPlayer(targetUUID);
             if (target == null) {
-                player.sendMessage(PREFIX + ChatColor.RED + "Pemain sudah offline.");
+                player.sendMessage(PREFIX + ChatColor.RED + "That player is offline.");
                 openPlayers(player);
                 return;
             }
@@ -564,24 +564,24 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             if (targetUUID == null || action == null) return;
             Player target = Bukkit.getPlayer(targetUUID);
             if (target == null) {
-                player.sendMessage(PREFIX + ChatColor.RED + "Pemain sudah offline.");
+                player.sendMessage(PREFIX + ChatColor.RED + "That player is offline.");
                 openPlayers(player);
                 return;
             }
             if (!canManage(player, target)) {
-                player.sendMessage(PREFIX + ChatColor.RED + "Kamu tidak bisa mengelola pemain tersebut.");
+                player.sendMessage(PREFIX + ChatColor.RED + "You cannot manage that player.");
                 openStaffMenu(player);
                 return;
             }
             if (action.equals("kick")) {
                 logAction(player, "KICK", target.getName());
-                target.kickPlayer(ChatColor.RED + "Kamu dikeluarkan oleh STAFF.");
-                player.sendMessage(PREFIX + ChatColor.GREEN + "Pemain berhasil di-kick.");
+                target.kickPlayer(ChatColor.RED + "You were kicked by a staff member.");
+                player.sendMessage(PREFIX + ChatColor.GREEN + "Player was kicked successfully.");
             } else if (action.equals("ban")) {
                 logAction(player, "BAN", target.getName());
-                Bukkit.getBanList(BanList.Type.NAME).addBan(target.getName(), "Dibanned oleh STAFF", null, player.getName());
-                target.kickPlayer(ChatColor.RED + "Kamu dibanned oleh STAFF.");
-                player.sendMessage(PREFIX + ChatColor.GREEN + "Pemain berhasil di-ban.");
+                Bukkit.getBanList(BanList.Type.NAME).addBan(target.getName(), "Banned by a staff member", null, player.getName());
+                target.kickPlayer(ChatColor.RED + "You were banned by a staff member.");
+                player.sendMessage(PREFIX + ChatColor.GREEN + "Player was banned successfully.");
             }
             openStaffMenu(player);
         }
@@ -593,10 +593,10 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         UUID uuid = target.getUniqueId();
         if (frozen.contains(uuid)) {
             frozen.remove(uuid);
-            target.sendMessage(PREFIX + ChatColor.GREEN + "Status FREEZE kamu telah dicabut.");
+            target.sendMessage(PREFIX + ChatColor.GREEN + "Your freeze has been lifted.");
         } else {
             frozen.add(uuid);
-            target.sendMessage(PREFIX + ChatColor.RED + "Kamu telah di-FREEZE oleh STAFF.");
+            target.sendMessage(PREFIX + ChatColor.RED + "You have been frozen by a staff member.");
         }
         saveFrozen();
     }
@@ -700,14 +700,14 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             String base = "deaths." + id;
             inv.setItem(i - page * 45, createItem(Material.SKELETON_SKULL,
                     "§c" + deathsData.getString(base + ".player", "Unknown"),
-                    "§7Waktu: " + deathsData.getString(base + ".time", ""),
-                    "§7Dunia: " + deathsData.getString(base + ".world", ""),
-                    "§7Lokasi: " + deathsData.getInt(base + ".x") + ", " + deathsData.getInt(base + ".y") + ", " + deathsData.getInt(base + ".z"),
-                    "§eKlik untuk memilih dan restore."));
+                    "§7Time: " + deathsData.getString(base + ".time", ""),
+                    "§7World: " + deathsData.getString(base + ".world", ""),
+                    "§7Location: " + deathsData.getInt(base + ".x") + ", " + deathsData.getInt(base + ".y") + ", " + deathsData.getInt(base + ".z"),
+                    "§eClick to select and restore."));
         }
-        inv.setItem(45, createItem(Material.ARROW, "§eSebelumnya"));
-        inv.setItem(49, createItem(Material.ARROW, "§eKembali"));
-        inv.setItem(53, createItem(Material.ARROW, "§eBerikutnya"));
+        inv.setItem(45, createItem(Material.ARROW, "§ePrevious"));
+        inv.setItem(49, createItem(Material.ARROW, "§eBack"));
+        inv.setItem(53, createItem(Material.ARROW, "§eNext"));
         staff.openInventory(inv);
     }
 
@@ -716,7 +716,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         deathSelection.put(staff.getUniqueId(), id);
         Inventory inv = Bukkit.createInventory(null, 54, "§8Death Rollback");
 
-        // Tampilkan isi inventory yang tersimpan agar STAFF bisa memeriksa sebelum restore.
+        // Display the saved inventory contents so staff can review them before restoring.
         ItemStack[] storage = readStoredItems(base + ".inventory", 36);
         for (int i = 0; i < Math.min(36, storage.length); i++) {
             if (storage[i] != null && storage[i].getType() != Material.AIR) {
@@ -735,12 +735,12 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         }
 
         inv.setItem(45, createItem(Material.PAPER, "§c" + deathsData.getString(base + ".player", "Unknown"),
-                "§7Waktu: " + deathsData.getString(base + ".time", ""),
-                "§7Lokasi: " + deathsData.getString(base + ".world", "") + " "
+                "§7Time: " + deathsData.getString(base + ".time", ""),
+                "§7Location: " + deathsData.getString(base + ".world", "") + " "
                         + deathsData.getInt(base + ".x") + ", " + deathsData.getInt(base + ".y") + ", " + deathsData.getInt(base + ".z"),
                 "§7Level: " + deathsData.getInt(base + ".level")));
-        inv.setItem(48, createItem(Material.LIME_WOOL, "§aRESTORE INVENTORY", "§7Pulihkan item yang tersimpan ke pemain."));
-        inv.setItem(50, createItem(Material.ARROW, "§eKembali"));
+        inv.setItem(48, createItem(Material.LIME_WOOL, "§aRESTORE INVENTORY", "§7Restore the saved items to the player."));
+        inv.setItem(50, createItem(Material.ARROW, "§eBack"));
         staff.openInventory(inv);
     }
 
@@ -758,14 +758,14 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     private void restoreDeath(Player staff, String id) {
         String base = "deaths." + id;
         if (!deathsData.contains(base + ".uuid")) {
-            staff.sendMessage(PREFIX + ChatColor.RED + "Data kematian tidak memiliki UUID pemain.");
+            staff.sendMessage(PREFIX + ChatColor.RED + "Death record does not contain a player UUID.");
             return;
         }
         Player target;
         try { target = Bukkit.getPlayer(UUID.fromString(deathsData.getString(base + ".uuid"))); }
         catch (Exception ex) { target = null; }
         if (target == null) {
-            staff.sendMessage(PREFIX + ChatColor.RED + "Pemain harus online untuk restore inventory.");
+            staff.sendMessage(PREFIX + ChatColor.RED + "The player must be online to restore their inventory.");
             return;
         }
 
@@ -782,8 +782,8 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         target.updateInventory();
 
         logAction(staff, "DEATH_ROLLBACK", target.getName() + " record " + id);
-        staff.sendMessage(PREFIX + ChatColor.GREEN + "Inventory kematian berhasil dipulihkan untuk " + target.getName() + ".");
-        target.sendMessage(PREFIX + ChatColor.GREEN + "Inventory kamu telah dipulihkan oleh STAFF.");
+        staff.sendMessage(PREFIX + ChatColor.GREEN + "Death inventory successfully restored for " + target.getName() + ".");
+        target.sendMessage(PREFIX + ChatColor.GREEN + "Your inventory has been restored by a staff member.");
     }
 
     private void openActivityLogs(Player staff) {
@@ -794,7 +794,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         for (int i = entries.size() - 1; i >= start && slot < 45; i--) {
             inv.setItem(slot++, createItem(Material.WRITABLE_BOOK, "§eLog #" + (i + 1), "§7" + entries.get(i)));
         }
-        inv.setItem(49, createItem(Material.ARROW, "§eKembali"));
+        inv.setItem(49, createItem(Material.ARROW, "§eBack"));
         staff.openInventory(inv);
     }
 
