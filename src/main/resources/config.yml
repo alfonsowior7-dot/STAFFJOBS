@@ -1,4 +1,4 @@
-# STAFFJOBS 1.1.7
+# STAFFJOBS 1.2.7
 settings:
   update-check:
     enabled: true
@@ -22,3 +22,7 @@ settings:
   death-notifications:
     enabled: true
     permission: staffjobs.deathnotify
+
+  punishments:
+    max-history-per-player: 100
+    mute-message: "You are muted and cannot chat."
