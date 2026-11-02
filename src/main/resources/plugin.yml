@@ -56,6 +56,9 @@ permissions:
   staffjobs.freeze:
     description: Freeze players
     default: op
+  staffjobs.invsee:
+    description: View and manage player inventories through Player Management
+    default: op
   staffjobs.protect.bypass:
     description: Bypass staff hierarchy
     default: false
