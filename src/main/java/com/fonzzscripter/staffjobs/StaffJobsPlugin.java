@@ -1,5 +1,6 @@
 package com.fonzzscripter.staffjobs;
 
+import org.bukkit.BanList;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -9,31 +10,47 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.Arrays;
-import java.util.Objects;
+import java.util.*;
 
 public final class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     public static final String PREFIX =
             ChatColor.YELLOW + "[ʜᴇʟᴘᴇʀꜱᴛᴀꜰꜰ] ";
 
-    private static final String MENU_TITLE =
+    private static final String MENU =
             ChatColor.DARK_GRAY + "✦ STAFFJOBS MENU";
 
-    private static final String PLAYER_TITLE =
+    private static final String PLAYERS =
             ChatColor.DARK_GRAY + "✦ PLAYER MANAGEMENT";
+
+    private static final String ACTIONS =
+            ChatColor.DARK_GRAY + "✦ PLAYER ACTIONS";
+
+    private static final String CONFIRM =
+            ChatColor.DARK_GRAY + "✦ CONFIRM ACTION";
+
+    private final Set<UUID> frozen = new HashSet<>();
+
+    private final Map<UUID, UUID> selected =
+            new HashMap<>();
+
+    private final Map<UUID, String> pendingAction =
+            new HashMap<>();
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
-        getServer().getPluginManager().registerEvents(this, this);
+        Bukkit.getPluginManager().registerEvents(this, this);
 
         Objects.requireNonNull(getCommand("staffmenu"))
                 .setExecutor(this::handleCommand);
@@ -46,6 +63,10 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        frozen.clear();
+        selected.clear();
+        pendingAction.clear();
+
         getLogger().info("STAFFJOBS disabled.");
     }
 
@@ -56,7 +77,7 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
             String[] args
     ) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(PREFIX + "Gunakan command dalam game.");
+            sender.sendMessage("Use this command in-game.");
             return true;
         }
 
@@ -83,12 +104,12 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         return true;
     }
 
-    private void openStaffMenu(Player player) {
-        Inventory inv = Bukkit.createInventory(null, 54, MENU_TITLE);
+    // MAIN MENU
 
-        for (int i = 0; i < 54; i++) {
-            setItem(inv, i, Material.BLACK_STAINED_GLASS_PANE, " ");
-        }
+    private void openStaffMenu(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 54, MENU);
+
+        fill(inv);
 
         setItem(inv, 4, Material.NETHER_STAR,
                 ChatColor.YELLOW + "✦ STAFFJOBS",
@@ -102,34 +123,42 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         setItem(inv, 10, Material.PLAYER_HEAD,
                 ChatColor.YELLOW + "Player Management");
 
-        setItem(inv, 12, Material.IRON_SWORD, ChatColor.RED + "Kick Player");
-        setItem(inv, 14, Material.BARRIER, ChatColor.RED + "Ban Player");
-        setItem(inv, 16, Material.ANVIL, ChatColor.RED + "Tempban Player");
-        setItem(inv, 20, Material.REDSTONE, ChatColor.RED + "Ban IP");
-        setItem(inv, 22, Material.ICE, ChatColor.AQUA + "Freeze Player");
-        setItem(inv, 24, Material.EMERALD, ChatColor.GREEN + "OP Management");
-        setItem(inv, 29, Material.BOOK, ChatColor.YELLOW + "Server Information");
-        setItem(inv, 31, Material.CLOCK, ChatColor.YELLOW + "TPS Monitor");
-        setItem(inv, 33, Material.SKELETON_SKULL, ChatColor.RED + "Last Death Logs");
-        setItem(inv, 40, Material.WRITABLE_BOOK, ChatColor.GOLD + "Report Logs");
-        setItem(inv, 49, Material.BARRIER, ChatColor.RED + "Close");
+        setItem(inv, 29, Material.BOOK,
+                ChatColor.YELLOW + "Server Information");
+
+        setItem(inv, 31, Material.CLOCK,
+                ChatColor.YELLOW + "TPS Monitor");
+
+        setItem(inv, 33, Material.SKELETON_SKULL,
+                ChatColor.RED + "Last Death Logs");
+
+        setItem(inv, 40, Material.WRITABLE_BOOK,
+                ChatColor.GOLD + "Report Logs");
+
+        setItem(inv, 49, Material.BARRIER,
+                ChatColor.RED + "Close");
 
         player.openInventory(inv);
     }
 
+    // PLAYER LIST
+
     private void openPlayerManagement(Player player) {
-        Inventory inv = Bukkit.createInventory(
-                null, 54, PLAYER_TITLE
-        );
+        Inventory inv = Bukkit.createInventory(null, 54, PLAYERS);
 
-        for (int i = 0; i < 54; i++) {
-            setItem(inv, i, Material.BLACK_STAINED_GLASS_PANE, " ");
-        }
+        fill(inv);
 
-        int slot = 10;
+        int[] slots = {
+                10, 11, 12, 13, 14, 15, 16,
+                19, 20, 21, 22, 23, 24, 25,
+                28, 29, 30, 31, 32, 33, 34,
+                37, 38, 39, 40, 41, 42, 43
+        };
+
+        int index = 0;
 
         for (Player target : Bukkit.getOnlinePlayers()) {
-            if (slot >= 44) break;
+            if (index >= slots.length) break;
 
             ItemStack head = new ItemStack(Material.PLAYER_HEAD);
             SkullMeta meta = (SkullMeta) head.getItemMeta();
@@ -145,72 +174,141 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
             ));
 
             head.setItemMeta(meta);
-            inv.setItem(slot, head);
+            inv.setItem(slots[index], head);
 
-            slot++;
-            if (slot == 17) slot = 19;
-            if (slot == 26) slot = 28;
-            if (slot == 35) slot = 37;
+            index++;
         }
 
-        setItem(inv, 49, Material.ARROW, ChatColor.YELLOW + "Back");
+        setItem(inv, 49, Material.ARROW,
+                ChatColor.YELLOW + "Back");
 
         player.openInventory(inv);
     }
 
-    private void setItem(
-            Inventory inv,
-            int slot,
-            Material material,
-            String name,
-            String... lore
-    ) {
-        ItemStack item = new ItemStack(material);
-        ItemMeta meta = item.getItemMeta();
+    // PLAYER ACTION MENU
 
-        meta.setDisplayName(name);
-        meta.setLore(Arrays.asList(lore));
+    private void openActions(Player admin, Player target) {
 
-        item.setItemMeta(meta);
-        inv.setItem(slot, item);
+        selected.put(admin.getUniqueId(), target.getUniqueId());
+
+        Inventory inv = Bukkit.createInventory(null, 27, ACTIONS);
+
+        fill(inv);
+
+        ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+        SkullMeta skull = (SkullMeta) head.getItemMeta();
+
+        skull.setOwningPlayer(target);
+        skull.setDisplayName(
+                ChatColor.YELLOW + target.getName()
+        );
+
+        skull.setLore(Arrays.asList(
+                ChatColor.GRAY + "Selected Player",
+                ChatColor.GRAY + "UUID: " + target.getUniqueId()
+        ));
+
+        head.setItemMeta(skull);
+
+        inv.setItem(4, head);
+
+        setItem(inv, 10, Material.IRON_SWORD,
+                ChatColor.RED + "KICK PLAYER");
+
+        setItem(inv, 12, Material.BARRIER,
+                ChatColor.RED + "BAN PLAYER");
+
+        setItem(inv, 14, Material.ICE,
+                frozen.contains(target.getUniqueId())
+                        ? ChatColor.GREEN + "UNFREEZE PLAYER"
+                        : ChatColor.AQUA + "FREEZE PLAYER");
+
+        setItem(inv, 22, Material.ARROW,
+                ChatColor.YELLOW + "BACK");
+
+        admin.openInventory(inv);
     }
+
+    // CONFIRMATION MENU
+
+    private void openConfirmation(
+            Player admin,
+            Player target,
+            String action
+    ) {
+        pendingAction.put(admin.getUniqueId(), action);
+
+        Inventory inv = Bukkit.createInventory(
+                null, 27, CONFIRM
+        );
+
+        fill(inv);
+
+        setItem(inv, 11, Material.LIME_WOOL,
+                ChatColor.GREEN + "CONFIRM " + action);
+
+        setItem(inv, 15, Material.RED_WOOL,
+                ChatColor.RED + "CANCEL");
+
+        setItem(inv, 4, Material.PLAYER_HEAD,
+                ChatColor.YELLOW + target.getName());
+
+        admin.openInventory(inv);
+    }
+
+    // INVENTORY CLICK
 
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
+
         String title = event.getView().getTitle();
 
-        if (!title.equals(MENU_TITLE) &&
-                !title.equals(PLAYER_TITLE)) {
+        if (!title.equals(MENU)
+                && !title.equals(PLAYERS)
+                && !title.equals(ACTIONS)
+                && !title.equals(CONFIRM)) {
             return;
         }
 
         event.setCancelled(true);
 
-        if (!(event.getWhoClicked() instanceof Player player)) {
+        if (!(event.getWhoClicked() instanceof Player admin)) {
             return;
         }
 
         int slot = event.getRawSlot();
 
-        if (slot < 0 || slot >= event.getView().getTopInventory().getSize()) {
+        if (slot < 0 ||
+                slot >= event.getView().getTopInventory().getSize()) {
             return;
         }
 
-        if (title.equals(MENU_TITLE)) {
-            if (slot == 49) {
-                player.closeInventory();
-            } else if (slot == 10) {
-                openPlayerManagement(player);
-            } else {
-                player.sendMessage(
-                        PREFIX + "Fitur ini sedang dalam pengembangan."
-                );
-            }
+        if (!admin.hasPermission("staffjobs.use")) {
+            admin.closeInventory();
+            return;
         }
 
-        if (title.equals(PLAYER_TITLE)) {
+        // MAIN MENU
+
+        if (title.equals(MENU)) {
+
             if (slot == 49) {
-                openStaffMenu(player);
+                admin.closeInventory();
+            }
+
+            if (slot == 10) {
+                openPlayerManagement(admin);
+            }
+
+            return;
+        }
+
+        // PLAYER LIST
+
+        if (title.equals(PLAYERS)) {
+
+            if (slot == 49) {
+                openStaffMenu(admin);
                 return;
             }
 
@@ -227,10 +325,269 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
 
             if (meta.getOwningPlayer() == null) return;
 
-            player.sendMessage(
-                    PREFIX + "Dipilih: " +
-                            meta.getOwningPlayer().getName()
+            Player target = Bukkit.getPlayer(
+                    meta.getOwningPlayer().getUniqueId()
+            );
+
+            if (target == null) {
+                admin.sendMessage(PREFIX + "Pemain sudah offline.");
+                openPlayerManagement(admin);
+                return;
+            }
+
+            openActions(admin, target);
+            return;
+        }
+
+        // ACTION MENU
+
+        if (title.equals(ACTIONS)) {
+
+            if (slot == 22) {
+                selected.remove(admin.getUniqueId());
+                openPlayerManagement(admin);
+                return;
+            }
+
+            UUID targetId = selected.get(admin.getUniqueId());
+
+            if (targetId == null) return;
+
+            Player target = Bukkit.getPlayer(targetId);
+
+            if (target == null) {
+                admin.sendMessage(PREFIX + "Pemain sudah offline.");
+                admin.closeInventory();
+                return;
+            }
+
+            if (!canManage(admin, target)) {
+                admin.sendMessage(
+                        PREFIX + "Kamu tidak bisa menindak staff setara atau lebih tinggi."
+                );
+                admin.closeInventory();
+                return;
+            }
+
+            if (slot == 10) {
+                if (!admin.hasPermission("staffjobs.kick")) return;
+                openConfirmation(admin, target, "KICK");
+            }
+
+            if (slot == 12) {
+                if (!admin.hasPermission("staffjobs.ban")) return;
+                openConfirmation(admin, target, "BAN");
+            }
+
+            if (slot == 14) {
+                if (!admin.hasPermission("staffjobs.freeze")) return;
+
+                toggleFreeze(admin, target);
+                openActions(admin, target);
+            }
+
+            return;
+        }
+
+        // CONFIRMATION
+
+        if (title.equals(CONFIRM)) {
+
+            if (slot == 15) {
+                pendingAction.remove(admin.getUniqueId());
+
+                UUID id = selected.get(admin.getUniqueId());
+                Player target = id == null ? null : Bukkit.getPlayer(id);
+
+                if (target != null) {
+                    openActions(admin, target);
+                } else {
+                    admin.closeInventory();
+                }
+
+                return;
+            }
+
+            if (slot != 11) return;
+
+            UUID id = selected.get(admin.getUniqueId());
+
+            if (id == null) {
+                admin.closeInventory();
+                return;
+            }
+
+            Player target = Bukkit.getPlayer(id);
+            String action = pendingAction.remove(admin.getUniqueId());
+
+            if (target == null || action == null) {
+                admin.sendMessage(PREFIX + "Target tidak ditemukan.");
+                admin.closeInventory();
+                return;
+            }
+
+            if (!canManage(admin, target)) {
+                admin.sendMessage(PREFIX + "Akses ditolak.");
+                admin.closeInventory();
+                return;
+            }
+
+            if (action.equals("KICK")
+                    && admin.hasPermission("staffjobs.kick")) {
+
+                target.kickPlayer(
+                        ChatColor.RED + "Kamu dikeluarkan oleh staff."
+                );
+
+                admin.sendMessage(
+                        PREFIX + target.getName() + " berhasil di-kick."
+                );
+            }
+
+            if (action.equals("BAN")
+                    && admin.hasPermission("staffjobs.ban")) {
+
+                Bukkit.getBanList(BanList.Type.NAME).addBan(
+                        target.getName(),
+                        "Banned by STAFFJOBS",
+                        null,
+                        admin.getName()
+                );
+
+                target.kickPlayer(
+                        ChatColor.RED + "Kamu telah di-ban."
+                );
+
+                admin.sendMessage(
+                        PREFIX + target.getName() + " berhasil di-ban."
+                );
+            }
+
+            admin.closeInventory();
+        }
+    }
+
+    // STAFF HIERARCHY
+
+    private int getRank(Player player) {
+
+        if (player.isOp()) return 100;
+
+        for (int rank = 99; rank >= 1; rank--) {
+            if (player.hasPermission("staffjobs.rank." + rank)) {
+                return rank;
+            }
+        }
+
+        return 0;
+    }
+
+    private boolean canManage(Player admin, Player target) {
+
+        if (admin.getUniqueId().equals(target.getUniqueId())) {
+            return false;
+        }
+
+        if (admin.hasPermission("staffjobs.protect.bypass")) {
+            return true;
+        }
+
+        return getRank(admin) > getRank(target);
+    }
+
+    // FREEZE SYSTEM
+
+    private void toggleFreeze(Player admin, Player target) {
+
+        UUID id = target.getUniqueId();
+
+        if (frozen.contains(id)) {
+
+            frozen.remove(id);
+
+            target.sendMessage(
+                    PREFIX + "Kamu sudah tidak dibekukan."
+            );
+
+            admin.sendMessage(
+                    PREFIX + target.getName() + " berhasil di-unfreeze."
+            );
+
+        } else {
+
+            frozen.add(id);
+
+            target.sendMessage(
+                    PREFIX + "Kamu sedang dibekukan oleh staff."
+            );
+
+            admin.sendMessage(
+                    PREFIX + target.getName() + " berhasil di-freeze."
             );
         }
     }
-}
+
+    @EventHandler
+    public void onMove(PlayerMoveEvent event) {
+
+        if (!frozen.contains(event.getPlayer().getUniqueId())) {
+            return;
+        }
+
+        if (event.getTo() == null) return;
+
+        if (event.getFrom().getBlockX() != event.getTo().getBlockX()
+                || event.getFrom().getBlockY() != event.getTo().getBlockY()
+                || event.getFrom().getBlockZ() != event.getTo().getBlockZ()) {
+
+            event.setTo(event.getFrom());
+        }
+    }
+
+    @EventHandler
+    public void onAttack(EntityDamageByEntityEvent event) {
+
+        if (event.getDamager() instanceof Player player
+                && frozen.contains(player.getUniqueId())) {
+
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        frozen.remove(event.getPlayer().getUniqueId());
+    }
+
+    // GUI UTILITIES
+
+    private void fill(Inventory inv) {
+
+        for (int i = 0; i < inv.getSize(); i++) {
+            setItem(
+                    inv,
+                    i,
+                    Material.BLACK_STAINED_GLASS_PANE,
+                    " "
+            );
+        }
+    }
+
+    private void setItem(
+            Inventory inv,
+            int slot,
+            Material material,
+            String name,
+            String... lore
+    ) {
+
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+
+        meta.setDisplayName(name);
+        meta.setLore(Arrays.asList(lore));
+
+        item.setItemMeta(meta);
+        inv.setItem(slot, item);
+    }
+            }
