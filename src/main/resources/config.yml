@@ -1,0 +1,34 @@
+# =====================================
+# STAFFJOBS Configuration
+# Author: FonzzScripter
+# Version: 1.0.0
+# Target: Paper 1.21.11
+# =====================================
+
+settings:
+
+  # Maximum death logs saved
+  max-death-logs: 100
+
+  # Maximum reports saved
+  max-reports: 100
+
+  # Automatically save data
+  auto-save: true
+
+  # Freeze settings
+  freeze:
+    prevent-movement: true
+    prevent-interaction: true
+    prevent-attack: true
+
+  # Rollback settings
+  rollback:
+    restore-armor: true
+    restore-offhand: true
+    replace-inventory: true
+
+  # Report settings
+  reports:
+    allow-empty-message: false
+    notify-staff: true
