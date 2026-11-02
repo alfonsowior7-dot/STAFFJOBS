@@ -668,8 +668,8 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         deathsData.set(base + ".y", player.getLocation().getBlockY());
         deathsData.set(base + ".z", player.getLocation().getBlockZ());
         deathsData.set(base + ".cause", event.getDeathMessage() == null ? "Unknown" : ChatColor.stripColor(event.getDeathMessage()));
-        deathsData.set(base + ".inventory", inv.getStorageContents());
-        deathsData.set(base + ".armor", inv.getArmorContents());
+        deathsData.set(base + ".inventory", new ArrayList<>(Arrays.asList(inv.getStorageContents())));
+        deathsData.set(base + ".armor", new ArrayList<>(Arrays.asList(inv.getArmorContents())));
         deathsData.set(base + ".offhand", inv.getItemInOffHand());
         deathsData.set(base + ".level", player.getLevel());
         deathsData.set(base + ".exp", player.getExp());
@@ -746,11 +746,36 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     private ItemStack[] readStoredItems(String path, int expectedSize) {
         ItemStack[] result = new ItemStack[expectedSize];
-        List<?> stored = deathsData.getList(path);
-        if (stored == null) return result;
+        Object raw = deathsData.get(path);
+        if (raw instanceof ItemStack[] array) {
+            for (int i = 0; i < Math.min(expectedSize, array.length); i++) {
+                if (array[i] != null) result[i] = array[i].clone();
+            }
+            return result;
+        }
+        if (!(raw instanceof List<?> stored)) return result;
+
         for (int i = 0; i < Math.min(expectedSize, stored.size()); i++) {
             Object value = stored.get(i);
-            if (value instanceof ItemStack item) result[i] = item.clone();
+            if (value instanceof ItemStack item) {
+                result[i] = item.clone();
+            } else if (value instanceof Map<?, ?> serialized) {
+                try {
+                    Map<String, Object> itemData = new HashMap<>();
+                    for (Map.Entry<?, ?> entry : serialized.entrySet()) {
+                        if (entry.getKey() instanceof String key) {
+                            itemData.put(key, entry.getValue());
+                        }
+                    }
+                    if (itemData.containsKey("==")
+                            && "org.bukkit.inventory.ItemStack".equals(itemData.get("=="))) {
+                        result[i] = ItemStack.deserialize(itemData);
+                    }
+                } catch (Exception exception) {
+                    getLogger().warning("Could not read saved item at " + path + "[" + i + "]: "
+                            + exception.getMessage());
+                }
+            }
         }
         return result;
     }
