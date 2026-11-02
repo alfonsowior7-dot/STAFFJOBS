@@ -7,6 +7,8 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -19,6 +21,9 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     public static final String PREFIX =
             ChatColor.YELLOW + "[ʜᴇʟᴘᴇʀꜱᴛᴀꜰꜰ] ";
+
+    private static final String MENU_TITLE =
+            ChatColor.DARK_GRAY + "✦ STAFFJOBS MENU";
 
     @Override
     public void onEnable() {
@@ -78,16 +83,12 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         Inventory inv = Bukkit.createInventory(
                 null,
                 54,
-                ChatColor.DARK_GRAY + "✦ STAFFJOBS MENU"
+                MENU_TITLE
         );
 
         for (int i = 0; i < 54; i++) {
-            setItem(
-                    inv,
-                    i,
-                    Material.BLACK_STAINED_GLASS_PANE,
-                    " "
-            );
+            setItem(inv, i,
+                    Material.BLACK_STAINED_GLASS_PANE, " ");
         }
 
         setItem(inv, 4, Material.NETHER_STAR,
@@ -153,5 +154,32 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
 
         item.setItemMeta(meta);
         inv.setItem(slot, item);
+    }
+
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent event) {
+
+        if (!event.getView().getTitle().equals(MENU_TITLE)) {
+            return;
+        }
+
+        event.setCancelled(true);
+
+        if (!(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+
+        int slot = event.getRawSlot();
+
+        if (slot == 49) {
+            player.closeInventory();
+            return;
+        }
+
+        if (slot >= 0 && slot < 54) {
+            player.sendMessage(
+                    PREFIX + "Fitur ini sedang dalam pengembangan."
+            );
+        }
     }
 }
