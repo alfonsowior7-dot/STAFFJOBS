@@ -6,12 +6,13 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -19,6 +20,8 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.*;
 
 public final class StaffJobsPlugin extends JavaPlugin implements Listener {
@@ -40,15 +43,19 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     private final Set<UUID> frozen = new HashSet<>();
 
-    private final Map<UUID, UUID> selected =
-            new HashMap<>();
+    private final Map<UUID, UUID> selected = new HashMap<>();
 
-    private final Map<UUID, String> pendingAction =
-            new HashMap<>();
+    private final Map<UUID, String> pendingAction = new HashMap<>();
+
+    private File frozenFile;
+    private YamlConfiguration frozenData;
 
     @Override
     public void onEnable() {
+
         saveDefaultConfig();
+
+        loadFrozen();
 
         Bukkit.getPluginManager().registerEvents(this, this);
 
@@ -63,12 +70,68 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
-        frozen.clear();
+
+        saveFrozen();
+
         selected.clear();
         pendingAction.clear();
 
         getLogger().info("STAFFJOBS disabled.");
     }
+
+    // FREEZE DATA STORAGE
+
+    private void loadFrozen() {
+
+        if (!getDataFolder().exists()) {
+            getDataFolder().mkdirs();
+        }
+
+        frozenFile = new File(getDataFolder(), "frozen.yml");
+
+        frozenData = YamlConfiguration.loadConfiguration(frozenFile);
+
+        frozen.clear();
+
+        for (String uuid : frozenData.getStringList("frozen-players")) {
+
+            try {
+                frozen.add(UUID.fromString(uuid));
+
+            } catch (IllegalArgumentException exception) {
+                getLogger().warning("Invalid UUID in frozen.yml: " + uuid);
+            }
+        }
+
+        getLogger().info("Loaded " + frozen.size() + " frozen players.");
+    }
+
+    private void saveFrozen() {
+
+        if (frozenData == null || frozenFile == null) {
+            return;
+        }
+
+        List<String> uuids = new ArrayList<>();
+
+        for (UUID uuid : frozen) {
+            uuids.add(uuid.toString());
+        }
+
+        frozenData.set("frozen-players", uuids);
+
+        try {
+
+            frozenData.save(frozenFile);
+
+        } catch (IOException exception) {
+
+            getLogger().severe("Failed to save frozen.yml!");
+            exception.printStackTrace();
+        }
+    }
+
+    // COMMANDS
 
     private boolean handleCommand(
             CommandSender sender,
@@ -76,12 +139,14 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
             String label,
             String[] args
     ) {
+
         if (!(sender instanceof Player player)) {
             sender.sendMessage("Use this command in-game.");
             return true;
         }
 
         if (command.getName().equalsIgnoreCase("staffmenu")) {
+
             if (!player.hasPermission("staffjobs.use")) {
                 player.sendMessage(PREFIX + "Kamu tidak memiliki izin.");
                 return true;
@@ -92,6 +157,7 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         }
 
         if (command.getName().equalsIgnoreCase("report")) {
+
             if (args.length == 0) {
                 player.sendMessage(PREFIX + "Gunakan /report <pesan>");
                 return true;
@@ -107,6 +173,7 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
     // MAIN MENU
 
     private void openStaffMenu(Player player) {
+
         Inventory inv = Bukkit.createInventory(null, 54, MENU);
 
         fill(inv);
@@ -141,9 +208,10 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         player.openInventory(inv);
     }
 
-    // PLAYER LIST
+    // PLAYER MANAGEMENT
 
     private void openPlayerManagement(Player player) {
+
         Inventory inv = Bukkit.createInventory(null, 54, PLAYERS);
 
         fill(inv);
@@ -158,12 +226,15 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         int index = 0;
 
         for (Player target : Bukkit.getOnlinePlayers()) {
+
             if (index >= slots.length) break;
 
             ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+
             SkullMeta meta = (SkullMeta) head.getItemMeta();
 
             meta.setOwningPlayer(target);
+
             meta.setDisplayName(
                     ChatColor.YELLOW + target.getName()
             );
@@ -174,6 +245,7 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
             ));
 
             head.setItemMeta(meta);
+
             inv.setItem(slots[index], head);
 
             index++;
@@ -196,9 +268,11 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         fill(inv);
 
         ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+
         SkullMeta skull = (SkullMeta) head.getItemMeta();
 
         skull.setOwningPlayer(target);
+
         skull.setDisplayName(
                 ChatColor.YELLOW + target.getName()
         );
@@ -236,11 +310,10 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
             Player target,
             String action
     ) {
+
         pendingAction.put(admin.getUniqueId(), action);
 
-        Inventory inv = Bukkit.createInventory(
-                null, 27, CONFIRM
-        );
+        Inventory inv = Bukkit.createInventory(null, 27, CONFIRM);
 
         fill(inv);
 
@@ -330,12 +403,16 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
             );
 
             if (target == null) {
+
                 admin.sendMessage(PREFIX + "Pemain sudah offline.");
+
                 openPlayerManagement(admin);
+
                 return;
             }
 
             openActions(admin, target);
+
             return;
         }
 
@@ -344,8 +421,11 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         if (title.equals(ACTIONS)) {
 
             if (slot == 22) {
+
                 selected.remove(admin.getUniqueId());
+
                 openPlayerManagement(admin);
+
                 return;
             }
 
@@ -356,33 +436,45 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
             Player target = Bukkit.getPlayer(targetId);
 
             if (target == null) {
+
                 admin.sendMessage(PREFIX + "Pemain sudah offline.");
+
                 admin.closeInventory();
+
                 return;
             }
 
             if (!canManage(admin, target)) {
+
                 admin.sendMessage(
                         PREFIX + "Kamu tidak bisa menindak staff setara atau lebih tinggi."
                 );
+
                 admin.closeInventory();
+
                 return;
             }
 
             if (slot == 10) {
+
                 if (!admin.hasPermission("staffjobs.kick")) return;
+
                 openConfirmation(admin, target, "KICK");
             }
 
             if (slot == 12) {
+
                 if (!admin.hasPermission("staffjobs.ban")) return;
+
                 openConfirmation(admin, target, "BAN");
             }
 
             if (slot == 14) {
+
                 if (!admin.hasPermission("staffjobs.freeze")) return;
 
                 toggleFreeze(admin, target);
+
                 openActions(admin, target);
             }
 
@@ -394,9 +486,11 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         if (title.equals(CONFIRM)) {
 
             if (slot == 15) {
+
                 pendingAction.remove(admin.getUniqueId());
 
                 UUID id = selected.get(admin.getUniqueId());
+
                 Player target = id == null ? null : Bukkit.getPlayer(id);
 
                 if (target != null) {
@@ -418,17 +512,24 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
             }
 
             Player target = Bukkit.getPlayer(id);
+
             String action = pendingAction.remove(admin.getUniqueId());
 
             if (target == null || action == null) {
+
                 admin.sendMessage(PREFIX + "Target tidak ditemukan.");
+
                 admin.closeInventory();
+
                 return;
             }
 
             if (!canManage(admin, target)) {
+
                 admin.sendMessage(PREFIX + "Akses ditolak.");
+
                 admin.closeInventory();
+
                 return;
             }
 
@@ -474,6 +575,7 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         if (player.isOp()) return 100;
 
         for (int rank = 99; rank >= 1; rank--) {
+
             if (player.hasPermission("staffjobs.rank." + rank)) {
                 return rank;
             }
@@ -495,7 +597,7 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         return getRank(admin) > getRank(target);
     }
 
-    // FREEZE SYSTEM
+    // PERMANENT FREEZE SYSTEM
 
     private void toggleFreeze(Player admin, Player target) {
 
@@ -504,6 +606,8 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         if (frozen.contains(id)) {
 
             frozen.remove(id);
+
+            saveFrozen();
 
             target.sendMessage(
                     PREFIX + "Kamu sudah tidak dibekukan."
@@ -517,6 +621,8 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
 
             frozen.add(id);
 
+            saveFrozen();
+
             target.sendMessage(
                     PREFIX + "Kamu sedang dibekukan oleh staff."
             );
@@ -526,6 +632,8 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
             );
         }
     }
+
+    // MOVEMENT BLOCK
 
     @EventHandler
     public void onMove(PlayerMoveEvent event) {
@@ -544,6 +652,8 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    // ATTACK BLOCK
+
     @EventHandler
     public void onAttack(EntityDamageByEntityEvent event) {
 
@@ -554,9 +664,20 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    // REJOIN CHECK
+
     @EventHandler
-    public void onQuit(PlayerQuitEvent event) {
-        frozen.remove(event.getPlayer().getUniqueId());
+    public void onJoin(PlayerJoinEvent event) {
+
+        Player player = event.getPlayer();
+
+        if (frozen.contains(player.getUniqueId())) {
+
+            player.sendMessage(
+                    PREFIX + ChatColor.RED +
+                    "Status Freeze kamu masih aktif!"
+            );
+        }
     }
 
     // GUI UTILITIES
@@ -564,6 +685,7 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
     private void fill(Inventory inv) {
 
         for (int i = 0; i < inv.getSize(); i++) {
+
             setItem(
                     inv,
                     i,
@@ -582,12 +704,15 @@ public final class StaffJobsPlugin extends JavaPlugin implements Listener {
     ) {
 
         ItemStack item = new ItemStack(material);
+
         ItemMeta meta = item.getItemMeta();
 
         meta.setDisplayName(name);
+
         meta.setLore(Arrays.asList(lore));
 
         item.setItemMeta(meta);
+
         inv.setItem(slot, item);
     }
-            }
+                    }
