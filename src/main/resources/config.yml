@@ -1,5 +1,7 @@
-# STAFFJOBS 1.1.4
+# STAFFJOBS 1.1.5
 settings:
+  update-check:
+    enabled: true
   max-death-logs: 100
   max-reports: 100
   auto-save: true
