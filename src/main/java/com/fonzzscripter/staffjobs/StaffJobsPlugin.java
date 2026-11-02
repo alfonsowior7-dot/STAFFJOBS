@@ -420,6 +420,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     }
 
     private void sendVersionNotice(Player player) {
+        if (!player.hasPermission("staffjobs.updatecheck")) return;
         if (latestVersion == null || latestVersion.isBlank()) return;
         String current = getDescription().getVersion();
         player.sendMessage("§8§m----------------------------------------");
