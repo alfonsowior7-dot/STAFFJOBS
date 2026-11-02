@@ -766,6 +766,14 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             else if (slot == 12) beginModerationChat(player, "ban");
             else if (slot == 16) beginModerationChat(player, "tempban");
             else if (slot == 14) {
+                if (!player.hasPermission("staffjobs.freeze")) {
+                    player.sendMessage(PREFIX + ChatColor.RED + "You do not have permission to freeze players.");
+                    return;
+                }
+                if (player.getUniqueId().equals(target.getUniqueId())) {
+                    player.sendMessage(PREFIX + ChatColor.RED + "You cannot freeze yourself.");
+                    return;
+                }
                 toggleFreeze(target);
                 openActions(player, target);
             } else if (slot == 22) openPlayers(player);
