@@ -502,8 +502,8 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         }
 
         if (title.equals("§8Death Rollback")) {
-            if (slot == 15) openDeathHistory(player, deathPages.getOrDefault(player.getUniqueId(), 0));
-            else if (slot == 11) {
+            if (slot == 50) openDeathHistory(player, deathPages.getOrDefault(player.getUniqueId(), 0));
+            else if (slot == 48) {
                 String id = deathSelection.get(player.getUniqueId());
                 if (id != null) restoreDeath(player, id);
                 player.closeInventory();
@@ -714,19 +714,53 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     private void openDeathDetail(Player staff, String id) {
         String base = "deaths." + id;
         deathSelection.put(staff.getUniqueId(), id);
-        Inventory inv = Bukkit.createInventory(null, 27, "§8Death Rollback");
-        inv.setItem(13, createItem(Material.PAPER, "§c" + deathsData.getString(base + ".player", "Unknown"),
+        Inventory inv = Bukkit.createInventory(null, 54, "§8Death Rollback");
+
+        // Tampilkan isi inventory yang tersimpan agar STAFF bisa memeriksa sebelum restore.
+        ItemStack[] storage = readStoredItems(base + ".inventory", 36);
+        for (int i = 0; i < Math.min(36, storage.length); i++) {
+            if (storage[i] != null && storage[i].getType() != Material.AIR) {
+                inv.setItem(i, storage[i].clone());
+            }
+        }
+        ItemStack[] armor = readStoredItems(base + ".armor", 4);
+        for (int i = 0; i < Math.min(4, armor.length); i++) {
+            if (armor[i] != null && armor[i].getType() != Material.AIR) {
+                inv.setItem(36 + i, armor[i].clone());
+            }
+        }
+        Object offhand = deathsData.get(base + ".offhand");
+        if (offhand instanceof ItemStack item && item.getType() != Material.AIR) {
+            inv.setItem(40, item.clone());
+        }
+
+        inv.setItem(45, createItem(Material.PAPER, "§c" + deathsData.getString(base + ".player", "Unknown"),
                 "§7Waktu: " + deathsData.getString(base + ".time", ""),
                 "§7Lokasi: " + deathsData.getString(base + ".world", "") + " "
-                        + deathsData.getInt(base + ".x") + ", " + deathsData.getInt(base + ".y") + ", " + deathsData.getInt(base + ".z")));
-        inv.setItem(11, createItem(Material.LIME_WOOL, "§aRESTORE INVENTORY"));
-        inv.setItem(15, createItem(Material.ARROW, "§eKembali"));
+                        + deathsData.getInt(base + ".x") + ", " + deathsData.getInt(base + ".y") + ", " + deathsData.getInt(base + ".z"),
+                "§7Level: " + deathsData.getInt(base + ".level")));
+        inv.setItem(48, createItem(Material.LIME_WOOL, "§aRESTORE INVENTORY", "§7Pulihkan item yang tersimpan ke pemain."));
+        inv.setItem(50, createItem(Material.ARROW, "§eKembali"));
         staff.openInventory(inv);
+    }
+
+    private ItemStack[] readStoredItems(String path, int expectedSize) {
+        ItemStack[] result = new ItemStack[expectedSize];
+        List<?> stored = deathsData.getList(path);
+        if (stored == null) return result;
+        for (int i = 0; i < Math.min(expectedSize, stored.size()); i++) {
+            Object value = stored.get(i);
+            if (value instanceof ItemStack item) result[i] = item.clone();
+        }
+        return result;
     }
 
     private void restoreDeath(Player staff, String id) {
         String base = "deaths." + id;
-        if (!deathsData.contains(base + ".uuid")) return;
+        if (!deathsData.contains(base + ".uuid")) {
+            staff.sendMessage(PREFIX + ChatColor.RED + "Data kematian tidak memiliki UUID pemain.");
+            return;
+        }
         Player target;
         try { target = Bukkit.getPlayer(UUID.fromString(deathsData.getString(base + ".uuid"))); }
         catch (Exception ex) { target = null; }
@@ -734,13 +768,19 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             staff.sendMessage(PREFIX + ChatColor.RED + "Pemain harus online untuk restore inventory.");
             return;
         }
-        target.getInventory().setStorageContents(deathsData.getList(base + ".inventory").toArray(new ItemStack[0]));
-        target.getInventory().setArmorContents(deathsData.getList(base + ".armor").toArray(new ItemStack[0]));
+
+        ItemStack[] storage = readStoredItems(base + ".inventory", 36);
+        ItemStack[] armor = readStoredItems(base + ".armor", 4);
+        target.getInventory().setStorageContents(storage);
+        target.getInventory().setArmorContents(armor);
+
         Object offhand = deathsData.get(base + ".offhand");
-        target.getInventory().setItemInOffHand(offhand instanceof ItemStack ? (ItemStack) offhand : null);
+        target.getInventory().setItemInOffHand(offhand instanceof ItemStack item ? item.clone() : null);
         target.setLevel(deathsData.getInt(base + ".level"));
         target.setExp((float) deathsData.getDouble(base + ".exp"));
         target.setTotalExperience(deathsData.getInt(base + ".total-exp"));
+        target.updateInventory();
+
         logAction(staff, "DEATH_ROLLBACK", target.getName() + " record " + id);
         staff.sendMessage(PREFIX + ChatColor.GREEN + "Inventory kematian berhasil dipulihkan untuk " + target.getName() + ".");
         target.sendMessage(PREFIX + ChatColor.GREEN + "Inventory kamu telah dipulihkan oleh STAFF.");
