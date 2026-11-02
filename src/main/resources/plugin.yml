@@ -16,6 +16,9 @@ commands:
     permission: staffjobs.report
 
 permissions:
+  staffjobs.updatecheck:
+    description: Receive STAFFJOBS version update notifications
+    default: op
   staffjobs.use:
     description: Open staff menu
     default: op
