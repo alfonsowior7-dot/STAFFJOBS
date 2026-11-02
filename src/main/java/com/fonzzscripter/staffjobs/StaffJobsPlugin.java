@@ -249,7 +249,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             ));
         }
         inventory.setItem(45, createItem(Material.ARROW, "§ePrevious Page"));
-        inventory.setItem(49, createItem(Material.BARRIER, "§cKembali"));
+        inventory.setItem(49, createItem(Material.BARRIER, "§cBack"));
         inventory.setItem(53, createItem(Material.ARROW, "§eNext Page"));
         player.openInventory(inventory);
     }
@@ -308,7 +308,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             if (online.hasPermission("staffjobs.use")) online.sendMessage(staffMessage);
         }
 
-        String notification = PREFIX + ChatColor.GREEN + "Halo, STAFF resolved the report from anda.\n"
+        String notification = PREFIX + ChatColor.GREEN + "Hello, the staff team has resolved your report.\n"
                 + PREFIX + ChatColor.YELLOW + "If your issue has not been resolved, please submit another report.";
         try {
             UUID uuid = UUID.fromString(reporterUUID);
@@ -326,7 +326,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             getLogger().warning("Invalid reporter UUID: " + reporterUUID);
         }
 
-        staff.sendMessage(PREFIX + ChatColor.GREEN + "Laporan " + reporterName + " berhasil diselesaikan.");
+        staff.sendMessage(PREFIX + ChatColor.GREEN + "Report from " + reporterName + " was resolved successfully.");
         openReportLogs(staff, 0);
     }
 
