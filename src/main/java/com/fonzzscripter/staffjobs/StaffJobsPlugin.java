@@ -907,9 +907,15 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             openPlayers(staff);
             return;
         }
-        if (!canManage(staff, target)) {
-            staff.sendMessage(PREFIX + ChatColor.RED + "You cannot manage that player.");
+        if (!canPunish(staff, target)) {
+            staff.sendMessage(PREFIX + ChatColor.RED + "Self-punishment and equal/higher-rank punishment are disabled.");
             openStaffMenu(staff);
+            return;
+        }
+        String permission = action.equals("kick") ? "staffjobs.kick" : "staffjobs.ban";
+        if (!staff.hasPermission(permission)) {
+            staff.sendMessage(PREFIX + ChatColor.RED + "You do not have permission for this action.");
+            openActions(staff, target);
             return;
         }
 
