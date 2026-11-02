@@ -1,0 +1,26 @@
+name: STAFFJOBS
+version: 1.0.0
+main: com.fonzzscripter.staffjobs.StaffJobsPlugin
+api-version: '1.21'
+author: FonzzScripter
+description: Advanced Server Staff Management
+
+commands:
+  staffmenu:
+    description: Open STAFFJOBS management menu
+    usage: /staffmenu
+    permission: staffjobs.use
+
+  report:
+    description: Report a server bug
+    usage: /report <message>
+    permission: staffjobs.report
+
+permissions:
+  staffjobs.use:
+    description: Allows access to STAFFJOBS menu
+    default: op
+
+  staffjobs.report:
+    description: Allows players to submit reports
+    default: true
