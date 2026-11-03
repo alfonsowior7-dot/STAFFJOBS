@@ -9,6 +9,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.configuration.serialization.ConfigurationSerialization;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -16,6 +17,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
@@ -486,7 +488,9 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     private void removeExpiredReports() {
         long now = System.currentTimeMillis();
-        long expiration = 24L * 60L * 60L * 1000L;
+        long expirationHours = getConfig().getLong("settings.reports.expiration-hours", 0L);
+        if (expirationHours <= 0L) return;
+        long expiration = expirationHours * 60L * 60L * 1000L;
         List<Map<?, ?>> reports = new ArrayList<>(getReports());
         boolean changed = false;
         Iterator<Map<?, ?>> iterator = reports.iterator();
@@ -518,7 +522,9 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             HttpURLConnection connection = null;
             String foundVersion = null;
             try {
-                URL url = new URL("https://raw.githubusercontent.com/alfonsowior7-dot/STAFFJOBS/main/src/main/resources/plugin.yml");
+                String repositoryUrl = getConfig().getString("settings.update-check.repository", "").trim();
+                if (repositoryUrl.isEmpty()) throw new IllegalStateException("Update-check repository URL is not configured.");
+                URL url = new URL(repositoryUrl);
                 connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("GET");
                 connection.setConnectTimeout(5000);
@@ -1033,8 +1039,14 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onAttack(EntityDamageByEntityEvent event) {
-        if (!(event.getDamager() instanceof Player player)) return;
-        if (frozen.contains(player.getUniqueId())
+        Player attacker = null;
+        if (event.getDamager() instanceof Player player) {
+            attacker = player;
+        } else if (event.getDamager() instanceof Projectile projectile
+                && projectile.getShooter() instanceof Player player) {
+            attacker = player;
+        }
+        if (attacker != null && frozen.contains(attacker.getUniqueId())
                 && getConfig().getBoolean("settings.freeze.prevent-attack", true)) {
             event.setCancelled(true);
         }
@@ -1042,6 +1054,18 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onFrozenInteract(PlayerInteractEvent event) {
+        if (frozen.contains(event.getPlayer().getUniqueId())
+                && getConfig().getBoolean("settings.freeze.prevent-interaction", true)) event.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onFrozenEntityInteract(PlayerInteractEntityEvent event) {
+        if (frozen.contains(event.getPlayer().getUniqueId())
+                && getConfig().getBoolean("settings.freeze.prevent-interaction", true)) event.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onFrozenConsume(PlayerItemConsumeEvent event) {
         if (frozen.contains(event.getPlayer().getUniqueId())
                 && getConfig().getBoolean("settings.freeze.prevent-interaction", true)) event.setCancelled(true);
     }
@@ -1091,6 +1115,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         deathsData.set(base + ".level", player.getLevel());
         deathsData.set(base + ".exp", player.getExp());
         deathsData.set(base + ".total-exp", player.getTotalExperience());
+        trimDeathHistory();
         saveDeaths();
 
         String notice = PREFIX + ChatColor.RED + "PLAYER DEATH: " + ChatColor.YELLOW + player.getName()
@@ -1229,11 +1254,24 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
 
         ItemStack[] storage = readStoredItems(base + ".inventory", 36);
         ItemStack[] armor = readStoredItems(base + ".armor", 4);
-        target.getInventory().setStorageContents(storage);
-        target.getInventory().setArmorContents(armor);
-
-        Object offhand = deathsData.get(base + ".offhand");
-        target.getInventory().setItemInOffHand(offhand instanceof ItemStack item ? item.clone() : null);
+        if (getConfig().getBoolean("settings.rollback.replace-inventory", true)) {
+            target.getInventory().setStorageContents(storage);
+        } else {
+            for (ItemStack item : storage) {
+                if (item == null || item.getType() == Material.AIR) continue;
+                Map<Integer, ItemStack> leftovers = target.getInventory().addItem(item.clone());
+                for (ItemStack leftover : leftovers.values()) {
+                    target.getWorld().dropItemNaturally(target.getLocation(), leftover);
+                }
+            }
+        }
+        if (getConfig().getBoolean("settings.rollback.restore-armor", true)) {
+            target.getInventory().setArmorContents(armor);
+        }
+        if (getConfig().getBoolean("settings.rollback.restore-offhand", true)) {
+            Object offhand = deathsData.get(base + ".offhand");
+            target.getInventory().setItemInOffHand(offhand instanceof ItemStack item ? item.clone() : null);
+        }
         target.setLevel(deathsData.getInt(base + ".level"));
         target.setExp((float) deathsData.getDouble(base + ".exp"));
         target.setTotalExperience(deathsData.getInt(base + ".total-exp"));
@@ -1267,7 +1305,8 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         List<String> entries = logsData.getStringList("entries");
         String actor = staff == null ? "SYSTEM" : staff.getName();
         entries.add(ZonedDateTime.now(WIB).format(dateFormatter) + " WIB | " + actor + " | " + action + " | " + target);
-        while (entries.size() > 500) entries.remove(0);
+        int maxEntries = getConfig().getInt("settings.activity-logs.max-entries", 500);
+        while (maxEntries > 0 && entries.size() > maxEntries) entries.remove(0);
         logsData.set("entries", entries);
         saveLogs();
     }
@@ -1277,9 +1316,22 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         logsData = YamlConfiguration.loadConfiguration(logsFile);
     }
     private void saveLogs() { if (logsData != null) saveFile(logsData, logsFile); }
+    private void trimDeathHistory() {
+        int maxEntries = getConfig().getInt("settings.max-death-logs", 100);
+        if (maxEntries <= 0) return;
+        if (deathsData == null || deathsData.getConfigurationSection("deaths") == null) return;
+        List<String> ids = new ArrayList<>(deathsData.getConfigurationSection("deaths").getKeys(false));
+        int excess = ids.size() - maxEntries;
+        for (int i = 0; i < excess; i++) {
+            deathsData.set("deaths." + ids.get(i), null);
+        }
+    }
+
     private void loadDeaths() {
         deathsFile = new File(getDataFolder(), "deaths.yml");
         deathsData = YamlConfiguration.loadConfiguration(deathsFile);
+        trimDeathHistory();
+        saveDeaths();
     }
     private void saveDeaths() { if (deathsData != null) saveFile(deathsData, deathsFile); }
 
