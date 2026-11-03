@@ -522,9 +522,15 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             HttpURLConnection connection = null;
             String foundVersion = null;
             try {
-                String repositoryUrl = getConfig().getString("settings.update-check.repository", "").trim();
-                if (repositoryUrl.isEmpty()) throw new IllegalStateException("Update-check repository URL is not configured.");
-                URL url = new URL(repositoryUrl);
+                String repositoryUrl = getConfig().getString("settings.update-check.repository", "");
+                if (repositoryUrl == null || repositoryUrl.isBlank()) {
+                    String apiVersion = getDescription().getAPIVersion();
+                    String repository = apiVersion != null && apiVersion.startsWith("26.")
+                            ? "STAFFJOBS-26.3" : "STAFFJOBS";
+                    repositoryUrl = "https://raw.githubusercontent.com/alfonsowior7-dot/" + repository
+                            + "/main/src/main/resources/plugin.yml";
+                }
+                URL url = new URL(repositoryUrl.trim());
                 connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("GET");
                 connection.setConnectTimeout(5000);
