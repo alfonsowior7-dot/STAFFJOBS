@@ -1,7 +1,8 @@
-# STAFFJOBS 1.0.1
+# STAFFJOBS 1.0.2
 settings:
   update-check:
     enabled: true
+    repository: https://raw.githubusercontent.com/alfonsowior7-dot/STAFFJOBS/main/src/main/resources/plugin.yml
   max-death-logs: 100
   max-reports: 100
   auto-save: true
@@ -16,6 +17,7 @@ settings:
   reports:
     allow-empty-message: false
     notify-staff: true
+    expiration-hours: 0
   timezone: Asia/Jakarta
   activity-logs:
     max-entries: 500
