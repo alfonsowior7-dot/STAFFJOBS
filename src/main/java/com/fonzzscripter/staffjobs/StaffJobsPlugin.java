@@ -7,6 +7,7 @@ import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.configuration.serialization.ConfigurationSerialization;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -61,6 +62,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     private final Map<UUID, String> pendingAction = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID, String> pendingReason = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID, Integer> reportPages = new HashMap<>();
+    private final Map<UUID, Integer> playerPages = new HashMap<>();
     private final Map<UUID, String> selectedReports = new HashMap<>();
 
     private File frozenFile, reportsFile, notificationsFile, logsFile, deathsFile, punishmentsFile;
@@ -70,6 +72,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     private static final ZoneId WIB = ZoneId.of("Asia/Jakarta");
     private final Map<UUID, String> deathSelection = new HashMap<>();
     private final Map<UUID, Integer> deathPages = new HashMap<>();
+    private final Map<UUID, Integer> activityPages = new HashMap<>();
     private volatile String latestVersion;
     private volatile boolean updateCheckCompleted;
 
@@ -100,6 +103,8 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         pendingAction.clear();
         pendingReason.clear();
         reportPages.clear();
+        playerPages.clear();
+        activityPages.clear();
         selectedReports.clear();
     }
 
@@ -624,13 +629,23 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
     }
 
     private void openPlayers(Player player) {
+        openPlayers(player, playerPages.getOrDefault(player.getUniqueId(), 0));
+    }
+
+    private void openPlayers(Player player, int requestedPage) {
+        List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
+        int pages = Math.max(1, (online.size() + 44) / 45);
+        int page = Math.max(0, Math.min(requestedPage, pages - 1));
+        playerPages.put(player.getUniqueId(), page);
         Inventory inventory = Bukkit.createInventory(null, 54, PLAYERS);
-        int slot = 0;
-        for (Player target : Bukkit.getOnlinePlayers()) {
-            if (slot >= 45) break;
-            inventory.setItem(slot++, createItem(Material.PLAYER_HEAD, "§e" + target.getName(), "§7Click to manage this player."));
+        int start = page * 45;
+        for (int i = start; i < Math.min(online.size(), start + 45); i++) {
+            Player target = online.get(i);
+            inventory.setItem(i - start, createItem(Material.PLAYER_HEAD, "§e" + target.getName(), "§7Click to manage this player."));
         }
-        inventory.setItem(49, createItem(Material.ARROW, "§eBack"));
+        inventory.setItem(45, createItem(Material.ARROW, "§ePrevious Page"));
+        inventory.setItem(49, createItem(Material.ARROW, "§eBack", "§7Page " + (page + 1) + "/" + pages));
+        inventory.setItem(53, createItem(Material.ARROW, "§eNext Page"));
         player.openInventory(inventory);
     }
 
@@ -680,7 +695,7 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         if (title.equals(MENU)) {
             if (slot == 10) openPlayers(player);
             else if (slot == 13) openReportLogs(player, 0);
-            else if (slot == 16) openActivityLogs(player);
+            else if (slot == 16) openActivityLogs(player, 0);
             else if (slot == 22) openDeathHistory(player, 0);
             else if (slot == 31) player.closeInventory();
             return;
@@ -719,8 +734,11 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        if (title.equals("§8Staff Activity Logs")) {
-            if (slot == 49) openStaffMenu(player);
+        if (title.startsWith("§8Staff Activity Logs")) {
+            int page = activityPages.getOrDefault(player.getUniqueId(), 0);
+            if (slot == 45) { openActivityLogs(player, page - 1); return; }
+            if (slot == 49) { openStaffMenu(player); return; }
+            if (slot == 53) { openActivityLogs(player, page + 1); return; }
             return;
         }
 
@@ -750,15 +768,17 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         }
 
         if (title.equals(PLAYERS)) {
-            if (slot == 49) {
-                openStaffMenu(player);
-                return;
-            }
+            int page = playerPages.getOrDefault(player.getUniqueId(), 0);
+            if (slot == 45) { openPlayers(player, page - 1); return; }
+            if (slot == 49) { openStaffMenu(player); return; }
+            if (slot == 53) { openPlayers(player, page + 1); return; }
+            if (slot >= 45) return;
             ItemStack clicked = event.getCurrentItem();
             if (clicked == null || clicked.getType() != Material.PLAYER_HEAD) return;
             List<Player> online = new ArrayList<>(Bukkit.getOnlinePlayers());
-            if (slot < online.size()) {
-                Player target = online.get(slot);
+            int index = page * 45 + slot;
+            if (index < online.size()) {
+                Player target = online.get(index);
                 if (!canManage(player, target)) {
                     player.sendMessage(PREFIX + ChatColor.RED + "That player's rank is too high.");
                     return;
@@ -1164,9 +1184,13 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
                             itemData.put(key, entry.getValue());
                         }
                     }
-                    if (itemData.containsKey("==")
-                            && "org.bukkit.inventory.ItemStack".equals(itemData.get("=="))) {
-                        result[i] = ItemStack.deserialize(itemData);
+                    if (itemData.containsKey("==")) {
+                        Object decoded = ConfigurationSerialization.deserializeObject(itemData);
+                        if (decoded instanceof ItemStack item) {
+                            result[i] = item.clone();
+                        } else {
+                            result[i] = ItemStack.deserialize(itemData);
+                        }
                     }
                 } catch (Exception exception) {
                     getLogger().warning("Could not read saved item at " + path + "[" + i + "]: "
@@ -1208,15 +1232,21 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
         target.sendMessage(PREFIX + ChatColor.GREEN + "Your inventory has been restored by a staff member.");
     }
 
-    private void openActivityLogs(Player staff) {
+    private void openActivityLogs(Player staff, int requestedPage) {
         List<String> entries = logsData.getStringList("entries");
+        int pages = Math.max(1, (entries.size() + 44) / 45);
+        int page = Math.max(0, Math.min(requestedPage, pages - 1));
+        activityPages.put(staff.getUniqueId(), page);
         Inventory inv = Bukkit.createInventory(null, 54, "§8Staff Activity Logs");
-        int start = Math.max(0, entries.size() - 45);
+        int end = entries.size() - (page * 45);
+        int start = Math.max(0, end - 45);
         int slot = 0;
-        for (int i = entries.size() - 1; i >= start && slot < 45; i--) {
+        for (int i = end - 1; i >= start && slot < 45; i--) {
             inv.setItem(slot++, createItem(Material.WRITABLE_BOOK, "§eLog #" + (i + 1), "§7" + entries.get(i)));
         }
-        inv.setItem(49, createItem(Material.ARROW, "§eBack"));
+        inv.setItem(45, createItem(Material.ARROW, "§ePrevious Page"));
+        inv.setItem(49, createItem(Material.ARROW, "§eBack", "§7Page " + (page + 1) + "/" + pages));
+        inv.setItem(53, createItem(Material.ARROW, "§eNext Page"));
         staff.openInventory(inv);
     }
 
