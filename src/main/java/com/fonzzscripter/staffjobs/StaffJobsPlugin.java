@@ -1184,14 +1184,26 @@ public class StaffJobsPlugin extends JavaPlugin implements Listener {
                             itemData.put(key, entry.getValue());
                         }
                     }
+                    ItemStack decodedItem = null;
                     if (itemData.containsKey("==")) {
-                        Object decoded = ConfigurationSerialization.deserializeObject(itemData);
-                        if (decoded instanceof ItemStack item) {
-                            result[i] = item.clone();
-                        } else {
-                            result[i] = ItemStack.deserialize(itemData);
+                        try {
+                            Object decoded = ConfigurationSerialization.deserializeObject(itemData);
+                            if (decoded instanceof ItemStack item) {
+                                decodedItem = item.clone();
+                            }
+                        } catch (Exception ignored) {
+                            // Try Bukkit's direct ItemStack deserializer below for older or unusual YAML data.
                         }
                     }
+                    if (decodedItem == null) {
+                        try {
+                            decodedItem = ItemStack.deserialize(itemData);
+                        } catch (Exception exception) {
+                            getLogger().warning("Could not read saved item at " + path + "[" + i + "]: "
+                                    + exception.getMessage());
+                        }
+                    }
+                    result[i] = decodedItem;
                 } catch (Exception exception) {
                     getLogger().warning("Could not read saved item at " + path + "[" + i + "]: "
                             + exception.getMessage());
